@@ -1,0 +1,34 @@
+# PlayLimiter configuration.
+# The running copy lives at %LOCALAPPDATA%\PlayLimiter\config.toml.
+# Stricter changes apply right away. Looser ones wait loosen_delay_hours.
+
+# Maximum continuous play before a cooldown starts.
+session_minutes = 90
+
+# How long games stay blocked once the session budget is used up.
+# The budget also refills after a no-play gap this long.
+cooldown_minutes = 180
+
+# Total play per day. 0 = no daily cap.
+daily_cap_minutes = 0
+
+# When the daily cap resets (24h clock, local time).
+daily_reset_time = "04:00"
+
+# Toast warnings this many minutes before the limit.
+warning_minutes = [10, 2]
+
+# After asking games to close, wait this long before force-closing them.
+grace_seconds = 60
+
+# How long looser settings (and uninstalling) take to apply.
+loosen_delay_hours = 24
+
+# Executables or folders under Steam libraries that should NOT count as games.
+# Bare names match the exe file name, and paths match that file or folder.
+# Example: exclude = ["wallpaper32.exe", "wallpaper64.exe"]
+exclude = []
+
+# Extra folders whose programs count as games (for non-Steam games).
+# Example: extra_paths = ["D:\\Games\\Other"]
+extra_paths = []

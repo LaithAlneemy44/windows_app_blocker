@@ -1,0 +1,25 @@
+# Runtime data (normally in %LOCALAPPDATA%\PlayLimiter, ignored here in case it's copied in)
+state.json
+playlimiter.log
+playlimiter.log.*
+config.toml
+requests/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build output
+build/
+dist/
+
+# Secrets
+.env
+.env.*
