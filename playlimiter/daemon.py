@@ -18,6 +18,7 @@ log = logging.getLogger("playlimiter")
 
 POLL_S = 2.0
 SAVE_EVERY_S = 10.0
+BLOCKED_LAUNCH_GRACE_S = 10
 
 
 def setup_logging() -> None:
@@ -155,23 +156,24 @@ class Daemon:
         self.scanner.configure(cfg["exclude"], cfg["extra_paths"])
 
         for w in result.warnings:
-            toast("PlayLimiter", f"{w} minute{'s' if w != 1 else ''} of play left. Save your game now.")
+            toast("PlayLimiter", f"{w} minute{'s' if w != 1 else ''} of play left. Save your game now.", sound=True)
 
         status = result.status
         mono = winsys.uptime_s()
         if status.blocked:
             new = [pid for pid in games if not self.closer.is_closing(pid)]
+            # Time ran out mid-game: full grace to save. Launched while already blocked: nothing to save.
+            grace = cfg["grace_seconds"] if result.just_blocked else min(cfg["grace_seconds"], BLOCKED_LAUNCH_GRACE_S)
             if new:
-                why = "Daily limit reached" if status.reason == "daily_cap" else "Time's up"
-                if not result.just_blocked:
+                if result.just_blocked:
+                    why = "Daily limit reached" if status.reason == "daily_cap" else "Time's up"
+                    body = f"Closing your game in {grace} s, so save now."
+                else:
                     why = "Games are blocked"
-                toast(
-                    f"PlayLimiter: {why}",
-                    f"Closing your game in {cfg['grace_seconds']} s, so save now. "
-                    f"Play allowed again in {fmt_duration(status.wait_s)}.",
-                )
+                    body = f"Closing the game in {grace} s."
+                toast(f"PlayLimiter: {why}", f"{body} Play allowed again in {fmt_duration(status.wait_s)}.", sound=True)
             for pid in new:
-                self.closer.close(pid, games[pid], mono, cfg["grace_seconds"])
+                self.closer.close(pid, games[pid], mono, grace)
         self.closer.step(mono)
 
     def run(self) -> None:

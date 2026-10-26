@@ -38,7 +38,8 @@ class Closer:
     """Tracks processes that were asked to close and kills them after grace_seconds."""
 
     def __init__(self):
-        self._closing: dict[int, tuple[str, float]] = {}  # pid -> (exe, kill_at mono)
+        # pid -> [exe, kill_at mono, window got WM_CLOSE]
+        self._closing: dict[int, list] = {}
 
     def is_closing(self, pid: int) -> bool:
         return pid in self._closing
@@ -48,14 +49,22 @@ class Closer:
             return
         n = post_close(pid)
         log.info("Asked %s (pid %d) to close via %d window(s); force close in %ss", exe, pid, n, grace_s)
-        self._closing[pid] = (exe, now + grace_s)
+        self._closing[pid] = [exe, now + grace_s, n > 0]
 
     def step(self, now: float) -> None:
-        for pid, (exe, kill_at) in list(self._closing.items()):
+        for pid, entry in list(self._closing.items()):
+            exe, kill_at, signalled = entry
             proc = still_same_process(pid, exe)
             if proc is None:
                 del self._closing[pid]
                 continue
+            if not signalled:
+                # A game that was just launched may not have a window yet. Keep trying until one
+                # gets WM_CLOSE, but only once: repeating it could dismiss a "save before quitting?" dialog.
+                n = post_close(pid)
+                if n:
+                    entry[2] = True
+                    log.info("Asked %s (pid %d) to close via %d window(s)", exe, pid, n)
             if now >= kill_at:
                 try:
                     proc.kill()

@@ -7,9 +7,18 @@ log = logging.getLogger(__name__)
 _toaster = None
 
 
-def toast(title: str, message: str) -> None:
+def toast(title: str, message: str, sound: bool = False) -> None:
+    """Show a toast. With sound=True also play a system sound: Windows hides toasts while a
+    full-screen game is running (automatic Do Not Disturb), but the sound still gets through."""
     global _toaster
     log.info("Toast: %s | %s", title, message)
+    if sound:
+        try:
+            import winsound
+
+            winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
+        except Exception as e:
+            log.warning("Sound failed: %s", e)
     try:
         from windows_toasts import Toast, WindowsToaster
 
