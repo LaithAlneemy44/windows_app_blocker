@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
-from . import rules, store, winsys
+from . import overlay, rules, store, winsys
 from .config import ConfigError, parse_config
 from .detect import GameScanner
 from .enforce import Closer
@@ -19,6 +19,8 @@ log = logging.getLogger("playlimiter")
 POLL_S = 2.0
 SAVE_EVERY_S = 10.0
 BLOCKED_LAUNCH_GRACE_S = 10
+WARNING_BANNER_S = 10
+BLOCKED_BANNER_MIN_S = 8
 
 
 def setup_logging() -> None:
@@ -156,7 +158,9 @@ class Daemon:
         self.scanner.configure(cfg["exclude"], cfg["extra_paths"])
 
         for w in result.warnings:
-            toast("PlayLimiter", f"{w} minute{'s' if w != 1 else ''} of play left. Save your game now.", sound=True)
+            left = f"{w} minute{'s' if w != 1 else ''} of play left"
+            toast("PlayLimiter", f"{left}. Save your game now.", sound=True)
+            overlay.show_async(left, "Save your game now.", WARNING_BANNER_S)
 
         status = result.status
         mono = winsys.uptime_s()
@@ -165,13 +169,17 @@ class Daemon:
             # Time ran out mid-game: full grace to save. Launched while already blocked: nothing to save.
             grace = cfg["grace_seconds"] if result.just_blocked else min(cfg["grace_seconds"], BLOCKED_LAUNCH_GRACE_S)
             if new:
+                again = f"Play allowed again in {fmt_duration(status.wait_s)}."
                 if result.just_blocked:
                     why = "Daily limit reached" if status.reason == "daily_cap" else "Time's up"
                     body = f"Closing your game in {grace} s, so save now."
+                    banner = "Save now. Your game closes in {left} s.\n" + again
                 else:
                     why = "Games are blocked"
                     body = f"Closing the game in {grace} s."
-                toast(f"PlayLimiter: {why}", f"{body} Play allowed again in {fmt_duration(status.wait_s)}.", sound=True)
+                    banner = again
+                toast(f"PlayLimiter: {why}", f"{body} {again}", sound=True)
+                overlay.show_async(why, banner, max(grace, BLOCKED_BANNER_MIN_S))
             for pid in new:
                 self.closer.close(pid, games[pid], mono, grace)
         self.closer.step(mono)

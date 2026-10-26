@@ -119,6 +119,10 @@ def main(argv=None) -> int:
     sub.add_parser("cancel-uninstall", help="cancel a scheduled removal")
     sub.add_parser("settings", help="open the settings window")
     sub.add_parser("shortcut", help="(re)create the desktop shortcut to the settings window")
+    overlay = sub.add_parser("overlay", help=argparse.SUPPRESS)  # used by the daemon
+    overlay.add_argument("--seconds", type=int, default=10)
+    overlay.add_argument("title")
+    overlay.add_argument("message")
     sub.add_parser("run", help="run the background loop (used by the logon task)")
     args = parser.parse_args(argv)
 
@@ -136,6 +140,11 @@ def main(argv=None) -> int:
         return gui_main()
     if args.cmd == "shortcut":
         return cmd_shortcut(args)
+    if args.cmd == "overlay":
+        from .overlay import show
+
+        show(args.title, args.message, args.seconds)
+        return 0
     return _send(args.cmd)
 
 
