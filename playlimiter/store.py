@@ -52,14 +52,18 @@ def _retry(fn, attempts=20, delay=0.05):
             time.sleep(delay)
 
 
-def write_json_atomic(path: Path, data: dict) -> None:
+def write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        f.write(text)
         f.flush()
         os.fsync(f.fileno())
     _retry(lambda: os.replace(tmp, path))
+
+
+def write_json_atomic(path: Path, data: dict) -> None:
+    write_text_atomic(path, json.dumps(data, indent=2))
 
 
 def read_json(path: Path) -> dict | None:

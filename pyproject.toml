@@ -25,7 +25,7 @@ playlimiter = "playlimiter.cli:main"
 packages = ["playlimiter"]
 
 [tool.setuptools.package-data]
-playlimiter = ["config.example.toml"]
+playlimiter = ["config.example.toml", "icon.ico"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

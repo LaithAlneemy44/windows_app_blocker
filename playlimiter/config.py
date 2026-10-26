@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import ntpath
 import re
 import tomllib
@@ -78,3 +79,35 @@ def parse_config(text: str) -> dict:
         cfg[key] = sorted({normalize_entry(e) for e in _str_list(key, cfg[key]) if e.strip()})
 
     return cfg
+
+
+def _toml_value(value) -> str:
+    if isinstance(value, str):
+        return json.dumps(value)  # JSON string escapes are valid TOML basic strings
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    return str(value)
+
+
+_COMMENTS = {
+    "session_minutes": "Maximum continuous play before a cooldown starts.",
+    "cooldown_minutes": "Block length once the session is used up; also the break that refills it.",
+    "daily_cap_minutes": "Total play per day. 0 = no daily cap.",
+    "daily_reset_time": "When the daily cap resets (24h clock, local time).",
+    "warning_minutes": "Toast warnings this many minutes before the limit.",
+    "grace_seconds": "After asking games to close, wait this long before force-closing them.",
+    "loosen_delay_hours": "How long looser settings (and uninstalling) take to apply.",
+    "exclude": "Exe names or paths under game folders that should NOT count as games.",
+    "extra_paths": "Extra folders whose programs count as games (non-Steam games).",
+}
+
+
+def render_config(cfg: dict) -> str:
+    """Write settings back out as TOML (used by the settings window)."""
+    lines = [
+        "# PlayLimiter configuration (written by the settings window).",
+        "# Stricter changes apply right away. Looser ones wait loosen_delay_hours.",
+    ]
+    for key in DEFAULTS:
+        lines += ["", f"# {_COMMENTS[key]}", f"{key} = {_toml_value(cfg[key])}"]
+    return "\n".join(lines) + "\n"

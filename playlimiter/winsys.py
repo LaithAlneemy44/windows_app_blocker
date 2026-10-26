@@ -105,3 +105,40 @@ def delete_task() -> bool:
 
 def task_exists() -> bool:
     return _schtasks("/Query", "/TN", TASK_NAME).returncode == 0
+
+
+SHORTCUT_NAME = "PlayLimiter Settings.lnk"
+ICON_PATH = Path(__file__).with_name("icon.ico")
+
+
+def desktop_dir() -> Path:
+    # Ask the shell, so a Desktop redirected to OneDrive is handled.
+    from win32com.shell import shell, shellcon
+
+    return Path(shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOPDIRECTORY, None, 0))
+
+
+def shortcut_path() -> Path:
+    return desktop_dir() / SHORTCUT_NAME
+
+
+def create_shortcut() -> Path:
+    """Desktop shortcut that opens the settings window without a console."""
+    import win32com.client
+
+    path = shortcut_path()
+    link = win32com.client.Dispatch("WScript.Shell").CreateShortCut(str(path))
+    link.TargetPath = pythonw()
+    link.Arguments = "-m playlimiter settings"
+    link.WorkingDirectory = str(Path.home())
+    link.IconLocation = str(ICON_PATH)
+    link.Description = "Change PlayLimiter settings"
+    link.Save()
+    return path
+
+
+def remove_shortcut() -> None:
+    try:
+        shortcut_path().unlink(missing_ok=True)
+    except OSError:
+        pass

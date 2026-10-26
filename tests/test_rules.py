@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from playlimiter import rules
-from playlimiter.config import ConfigError, parse_config
+from playlimiter.config import ConfigError, parse_config, render_config
 from playlimiter.rules import DEFAULTS, Engine, State
 from playlimiter.steam import library_paths_from_vdf
 
@@ -399,3 +399,11 @@ def test_libraryfolders_vdf():
     "1" { "path" "D:\\SteamLibrary" }
 }'''
     assert library_paths_from_vdf(text) == ["C:\\Program Files (x86)\\Steam", "D:\\SteamLibrary"]
+
+
+def test_render_config_roundtrips():
+    assert parse_config(render_config(DEFAULTS)) == DEFAULTS
+    cfg = copy.deepcopy(DEFAULTS)
+    cfg.update(exclude=['d:\\tools\\x "y"', "wallpaper64.exe"], extra_paths=["e:\\spiele\\ü"],
+               loosen_delay_hours=1.5, warning_minutes=[15, 5, 1])
+    assert parse_config(render_config(cfg)) == cfg

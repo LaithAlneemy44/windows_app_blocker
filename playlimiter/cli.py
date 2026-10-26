@@ -67,6 +67,12 @@ def cmd_install(_args) -> int:
     else:
         winsys.run_task()
         print("Started PlayLimiter in the background.")
+    print(f"Desktop shortcut: {winsys.create_shortcut()}")
+    return 0
+
+
+def cmd_shortcut(_args) -> int:
+    print(f"Desktop shortcut: {winsys.create_shortcut()}")
     return 0
 
 
@@ -111,6 +117,8 @@ def main(argv=None) -> int:
     sub.add_parser("install", help="register the logon task and start the app")
     sub.add_parser("uninstall", help="schedule removal after loosen_delay_hours")
     sub.add_parser("cancel-uninstall", help="cancel a scheduled removal")
+    sub.add_parser("settings", help="open the settings window")
+    sub.add_parser("shortcut", help="(re)create the desktop shortcut to the settings window")
     sub.add_parser("run", help="run the background loop (used by the logon task)")
     args = parser.parse_args(argv)
 
@@ -122,6 +130,12 @@ def main(argv=None) -> int:
         return cmd_status(args)
     if args.cmd == "install":
         return cmd_install(args)
+    if args.cmd == "settings":
+        from .gui import main as gui_main
+
+        return gui_main()
+    if args.cmd == "shortcut":
+        return cmd_shortcut(args)
     return _send(args.cmd)
 
 

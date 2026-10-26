@@ -33,8 +33,9 @@ playlimiter install
 `playlimiter install`:
 
 1. creates `%LOCALAPPDATA%\PlayLimiter\config.toml` from [config.example.toml](playlimiter/config.example.toml) if it doesn't exist yet,
-2. registers a Task Scheduler task, **PlayLimiter**, that starts the app hidden (via `pythonw`) whenever you log on, and
-3. starts the app right away.
+2. registers a Task Scheduler task, **PlayLimiter**, that starts the app hidden (via `pythonw`) whenever you log on,
+3. starts the app right away, and
+4. puts a **PlayLimiter Settings** shortcut on your desktop.
 
 If `playlimiter` isn't found, the Python `Scripts` folder isn't on your PATH. Use `py -m playlimiter install` instead (same for all commands below).
 
@@ -42,7 +43,14 @@ Install with plain `pip install .`, not `pip install -e .`, so the app doesn't d
 
 ## Configuration
 
-Edit `%LOCALAPPDATA%\PlayLimiter\config.toml`. Changes are picked up within a couple of seconds. If the file is invalid, the current settings are kept, and the error is logged and shown as a toast.
+The easiest way is the **PlayLimiter Settings** desktop shortcut (or `playlimiter settings`). It shows:
+
+- your remaining play time and today's total,
+- each setting's active value, and any pending change with the date it applies.
+
+Before saving, it lists which changes apply immediately and which have to wait.
+
+You can also edit `%LOCALAPPDATA%\PlayLimiter\config.toml` directly. Changes are picked up within a couple of seconds. If the file is invalid, the current settings are kept, and the error is logged and shown as a toast.
 
 ```toml
 session_minutes = 90        # max continuous play
@@ -73,11 +81,13 @@ Notes:
 | Command | What it does |
 |---|---|
 | `playlimiter status` | Budget left, cooldown remaining, today's usage, active settings, pending changes and when they apply |
-| `playlimiter install` | Create the config if missing, register the logon task, start the app |
+| `playlimiter settings` | Open the settings window |
+| `playlimiter install` | Create the config if missing, register the logon task, start the app, add the desktop shortcut |
+| `playlimiter shortcut` | Recreate the desktop shortcut |
 | `playlimiter uninstall` | Schedule removal after `loosen_delay_hours` |
 | `playlimiter cancel-uninstall` | Cancel a scheduled removal immediately |
 
-When a scheduled uninstall comes due, the app deletes its logon task and `%LOCALAPPDATA%\PlayLimiter`, then exits. To remove the program itself afterwards, run `py -m pip uninstall playlimiter`.
+When a scheduled uninstall comes due, the app deletes its logon task, its desktop shortcut and `%LOCALAPPDATA%\PlayLimiter`, then exits. To remove the program itself afterwards, run `py -m pip uninstall playlimiter`.
 
 Files, all in `%LOCALAPPDATA%\PlayLimiter`:
 
@@ -104,7 +114,7 @@ py -m pip install -e ".[dev]"
 py -m pytest
 ```
 
-The rules (sessions, cooldowns, daily cap, delayed loosening, uninstall timer) are in `playlimiter/rules.py`, with no Windows or file I/O dependencies. Tests drive them with a fake clock. Windows-specific code is in `detect.py`, `enforce.py`, `notify.py`, `steam.py` and `winsys.py`.
+The rules (sessions, cooldowns, daily cap, delayed loosening, uninstall timer) are in `playlimiter/rules.py`, with no Windows or file I/O dependencies. Tests drive them with a fake clock. Windows-specific code is in `detect.py`, `enforce.py`, `notify.py`, `steam.py` and `winsys.py`. The settings window is `gui.py` (tkinter).
 
 ## Support
 

@@ -60,6 +60,7 @@ def apply_request(state: rules.State, cmd: str) -> str:
 def perform_uninstall() -> None:
     log.warning("Uninstall delay elapsed: removing scheduled task and data")
     winsys.delete_task()
+    winsys.remove_shortcut()
     toast("PlayLimiter removed", "The logon task and data were deleted. Run 'pip uninstall playlimiter' to remove the program.")
     logging.shutdown()
     for h in list(logging.getLogger().handlers):
@@ -94,10 +95,16 @@ class Daemon:
             return False
         if mtime == self.config_mtime:
             return False
+        try:
+            text = store.config_path().read_text(encoding="utf-8")
+        except OSError as e:
+            # Probably mid-save by an editor or the settings window; try again next poll.
+            log.debug("config.toml not readable yet: %s", e)
+            return False
         self.config_mtime = mtime
         try:
-            desired = read_config()
-        except (ConfigError, OSError, UnicodeDecodeError) as e:
+            desired = parse_config(text)
+        except (ConfigError, UnicodeDecodeError) as e:
             log.error("config.toml rejected, keeping active settings: %s", e)
             toast("PlayLimiter: config error", f"{e}. Keeping current settings.")
             return False
