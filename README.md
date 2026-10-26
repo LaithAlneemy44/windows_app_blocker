@@ -84,6 +84,7 @@ Notes:
 | `playlimiter settings` | Open the settings window |
 | `playlimiter install` | Create the config if missing, register the logon task, start the app, add the desktop shortcut |
 | `playlimiter shortcut` | Recreate the desktop shortcut |
+| `playlimiter start-cooldown` | Start the cooldown now, even with play time left. It's stricter, so it applies immediately and can't be undone. Also available as a button in the settings window. |
 | `playlimiter uninstall` | Schedule removal after `loosen_delay_hours` |
 | `playlimiter cancel-uninstall` | Cancel a scheduled removal immediately |
 

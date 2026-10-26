@@ -366,6 +366,15 @@ def request_uninstall(state: State) -> float:
     return state.uninstall_remaining_s
 
 
+def start_cooldown(state: State) -> bool:
+    """Start the cooldown now, even with play time left. It's stricter, so no delay."""
+    if state.cooldown_elapsed_s is not None:
+        return False
+    state.cooldown_elapsed_s = 0.0
+    state.idle_s = 0.0
+    return True
+
+
 def cancel_uninstall(state: State) -> bool:
     was = state.uninstall_remaining_s is not None
     state.uninstall_remaining_s = None

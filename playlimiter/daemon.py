@@ -57,6 +57,10 @@ def apply_request(state: rules.State, cmd: str) -> str:
         return f"Uninstall scheduled for {when:%a %d %b %H:%M}. Run 'playlimiter cancel-uninstall' to cancel."
     if cmd == "cancel-uninstall":
         return "Uninstall cancelled." if rules.cancel_uninstall(state) else "No uninstall was scheduled."
+    if cmd == "start-cooldown":
+        if not rules.start_cooldown(state):
+            return "A cooldown is already running."
+        return f"Cooldown started. Games are blocked for {fmt_duration(state.active['cooldown_minutes'] * 60)}."
     raise ValueError(f"unknown request {cmd!r}")
 
 
@@ -88,6 +92,7 @@ class Daemon:
         self.closer = Closer()
         self.config_mtime: float | None = None
         self.last_save = 0.0
+        self.cooldown_requested = False  # started by hand: running games get the full grace
 
     # ------------------------------------------------------------ config
 
@@ -134,10 +139,15 @@ class Daemon:
         for f in sorted(d.glob("*.json")):
             try:
                 cmd = json.loads(f.read_text(encoding="utf-8"))["cmd"]
+                was_cooling = self.state.cooldown_elapsed_s is not None
                 msg = apply_request(self.state, cmd)
+                if cmd == "start-cooldown" and not was_cooling:
+                    self.cooldown_requested = True
                 log.info("Request %s: %s", cmd, msg)
                 toast("PlayLimiter", msg)
                 changed = True
+                self.save()  # before replying, so the sender sees the new state
+                store.write_json_atomic(f.with_suffix(".reply"), {"message": msg})
             except Exception as e:
                 log.error("Bad request file %s: %s", f.name, e)
             f.unlink(missing_ok=True)
@@ -166,12 +176,17 @@ class Daemon:
         mono = winsys.uptime_s()
         if status.blocked:
             new = [pid for pid in games if not self.closer.is_closing(pid)]
-            # Time ran out mid-game: full grace to save. Launched while already blocked: nothing to save.
-            grace = cfg["grace_seconds"] if result.just_blocked else min(cfg["grace_seconds"], BLOCKED_LAUNCH_GRACE_S)
+            # Time ran out (or cooldown started by hand) mid-game: full grace to save.
+            # Launched while already blocked: nothing to save.
+            ending_now = result.just_blocked or self.cooldown_requested
+            grace = cfg["grace_seconds"] if ending_now else min(cfg["grace_seconds"], BLOCKED_LAUNCH_GRACE_S)
             if new:
                 again = f"Play allowed again in {fmt_duration(status.wait_s)}."
-                if result.just_blocked:
-                    why = "Daily limit reached" if status.reason == "daily_cap" else "Time's up"
+                if ending_now:
+                    if self.cooldown_requested:
+                        why = "Cooldown started"
+                    else:
+                        why = "Daily limit reached" if status.reason == "daily_cap" else "Time's up"
                     body = f"Closing your game in {grace} s, so save now."
                     banner = "Save now. Your game closes in {left} s.\n" + again
                 else:
@@ -182,6 +197,7 @@ class Daemon:
                 overlay.show_async(why, banner, max(grace, BLOCKED_BANNER_MIN_S))
             for pid in new:
                 self.closer.close(pid, games[pid], mono, grace)
+        self.cooldown_requested = False
         self.closer.step(mono)
 
     def run(self) -> None:

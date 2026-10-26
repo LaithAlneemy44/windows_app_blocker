@@ -335,6 +335,18 @@ def test_pending_survives_restart_and_ignores_clock_jump():
     assert saved.pending[0]["remaining_s"] == pytest.approx(23 * HOUR - 60)
 
 
+def test_start_cooldown_early_blocks_now_and_refills_after():
+    state, engine, clock = make()
+    run(engine, clock, 20 * MIN, playing=True)
+    assert rules.start_cooldown(state)
+    assert not rules.start_cooldown(state)  # already running: no restart
+    s = status(engine, clock)
+    assert s.blocked and s.reason == "cooldown" and s.wait_s == 180 * MIN
+    run(engine, clock, 180 * MIN, playing=False, step=60)
+    s = status(engine, clock)
+    assert not s.blocked and s.remaining_s == 90 * MIN
+
+
 # ---------------------------------------------------------------- uninstall
 
 def test_delayed_uninstall():

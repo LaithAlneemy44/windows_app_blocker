@@ -90,8 +90,10 @@ class SettingsWindow:
             self.active_labels[key].grid(row=row + 2, column=1, columnspan=2, sticky="w", pady=(0, 6))
             row += 3
 
+        self.cooldown_button = ttk.Button(frame, text="Start cooldown now", command=self.start_cooldown)
+        self.cooldown_button.grid(row=row, column=0, sticky="w", pady=(10, 0))
         actions = ttk.Frame(frame)
-        actions.grid(row=row, column=0, columnspan=3, sticky="e", pady=(10, 0))
+        actions.grid(row=row, column=1, columnspan=2, sticky="e", pady=(10, 0))
         ttk.Button(actions, text="Reload", command=self.load_form).grid(row=0, column=0, padx=4)
         ttk.Button(actions, text="Save", command=self.save).grid(row=0, column=1, padx=4)
         ttk.Button(actions, text="Close", command=root.destroy).grid(row=0, column=2, padx=4)
@@ -188,6 +190,24 @@ class SettingsWindow:
         messagebox.showinfo("PlayLimiter", "Saved. PlayLimiter picks the change up within a few seconds." + note)
         self.root.after(3000, self.refresh)
 
+    def start_cooldown(self) -> None:
+        state = load_state()
+        if state is None:
+            return
+        cfg = state.active
+        if not messagebox.askyesno(
+            "Start cooldown now?",
+            f"Games will be blocked for {fmt_duration(cfg['cooldown_minutes'] * 60)}, starting now.\n\n"
+            f"A running game gets {cfg['grace_seconds']} s to save before it's closed.\n\n"
+            "This can't be undone. Start the cooldown?",
+        ):
+            return
+        from .cli import send_request
+
+        ok, message = send_request("start-cooldown")
+        (messagebox.showinfo if ok else messagebox.showerror)("PlayLimiter", message)
+        self.root.after(200, self.refresh)
+
     # ------------------------------------------------------------ status
 
     def refresh(self) -> None:
@@ -198,6 +218,7 @@ class SettingsWindow:
         else:
             st = rules.evaluate(state, datetime.now())
             cfg = state.active
+            self.cooldown_button.state(["disabled"] if st.reason == "cooldown" else ["!disabled"])
             if st.reason == "cooldown":
                 line = f"Cooldown: play allowed again in {fmt_duration(st.wait_s)}"
             elif st.reason == "daily_cap":

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
 import subprocess
 import sys
@@ -10,8 +11,15 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 TASK_NAME = "PlayLimiter"
-MUTEX_NAME = "Local\\PlayLimiter.Daemon"
 _CREATE_NO_WINDOW = 0x08000000
+
+
+def _mutex_name() -> str:
+    # One daemon per data folder (lets a test copy with its own LOCALAPPDATA run alongside).
+    from .store import data_dir
+
+    key = hashlib.sha1(str(data_dir()).casefold().encode()).hexdigest()[:12]
+    return f"Local\\PlayLimiter.Daemon.{key}"
 
 
 def uptime_s() -> float:
@@ -25,7 +33,7 @@ def acquire_single_instance():
     import win32event
     import winerror
 
-    handle = win32event.CreateMutex(None, False, MUTEX_NAME)
+    handle = win32event.CreateMutex(None, False, _mutex_name())
     if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
         return None
     return handle
@@ -37,7 +45,7 @@ def daemon_running() -> bool:
     import win32event
 
     try:
-        h = win32event.OpenMutex(win32event.SYNCHRONIZE, False, MUTEX_NAME)
+        h = win32event.OpenMutex(win32event.SYNCHRONIZE, False, _mutex_name())
     except pywintypes.error:
         return False
     win32api.CloseHandle(h)

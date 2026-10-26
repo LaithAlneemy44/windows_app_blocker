@@ -76,38 +76,43 @@ def cmd_shortcut(_args) -> int:
     return 0
 
 
-def _send(cmd: str) -> int:
+def send_request(cmd: str) -> tuple[bool, str]:
+    """Hand a command to the running daemon, or apply it directly if it isn't running.
+
+    Returns (ok, message for the user). Also used by the settings window.
+    """
     from .daemon import apply_request, load_state, save_state
 
     if winsys.daemon_running():
         d = store.requests_dir()
         d.mkdir(parents=True, exist_ok=True)
         req = d / f"{uuid.uuid4().hex}.json"
+        reply = req.with_suffix(".reply")
         store.write_json_atomic(req, {"cmd": cmd})
         for _ in range(50):
-            if not req.exists():
-                break
+            if reply.exists():
+                message = store.read_json(reply)["message"]
+                reply.unlink(missing_ok=True)
+                return True, message
+            if not req.exists():  # consumed without a reply: the daemon rejected it
+                return False, "PlayLimiter couldn't handle that request; see playlimiter.log."
             time.sleep(0.1)
-        else:
-            print("Request queued, but the daemon hasn't picked it up yet.")
-            return 1
-        state = load_state()
-        if cmd == "uninstall" and state and state.uninstall_remaining_s is not None:
-            when = datetime.now() + timedelta(seconds=state.uninstall_remaining_s)
-            print(f"Uninstall scheduled for {when:%a %d %b %H:%M}.")
-        else:
-            print("Done." if cmd == "cancel-uninstall" else "Request handled.")
-        return 0
+        return False, "Request queued, but PlayLimiter hasn't picked it up yet."
 
     state = load_state()
     if state is None:
-        print("PlayLimiter has no state; nothing to do.")
-        return 1
-    print(apply_request(state, cmd))
+        return False, "PlayLimiter has no state; nothing to do."
+    message = apply_request(state, cmd)
     save_state(state)
     if cmd == "uninstall":
-        print("Note: the daemon is not running. Removal happens once it runs (at next logon).")
-    return 0
+        message += "\nNote: PlayLimiter is not running. Removal happens once it runs (at next logon)."
+    return True, message
+
+
+def _send(cmd: str) -> int:
+    ok, message = send_request(cmd)
+    print(message)
+    return 0 if ok else 1
 
 
 def main(argv=None) -> int:
@@ -117,6 +122,7 @@ def main(argv=None) -> int:
     sub.add_parser("install", help="register the logon task and start the app")
     sub.add_parser("uninstall", help="schedule removal after loosen_delay_hours")
     sub.add_parser("cancel-uninstall", help="cancel a scheduled removal")
+    sub.add_parser("start-cooldown", help="start the cooldown now, even with play time left")
     sub.add_parser("settings", help="open the settings window")
     sub.add_parser("shortcut", help="(re)create the desktop shortcut to the settings window")
     overlay = sub.add_parser("overlay", help=argparse.SUPPRESS)  # used by the daemon
