@@ -1,7 +1,16 @@
-"""Pure rules logic: session budget, cooldown, daily cap, delayed loosening, delayed uninstall.
+"""Pure rules logic: sessions, cooldown, daily cap, delayed loosening, delayed uninstall.
 
 Nothing in here touches Windows, files or the real clock. Callers pass in the
 times, so the rules can be driven by a fake clock in tests.
+
+Session model
+-------------
+Launching a game starts a session. The session clock then runs continuously,
+whether or not a game is still open, so quitting early doesn't save time for
+later. When it reaches ``session_minutes`` the cooldown starts and runs for
+``cooldown_minutes``. After that nothing counts until a game is launched again,
+which starts a fresh session. The daily cap is different: it counts only time
+a game is actually running.
 
 Time model
 ----------
@@ -35,8 +44,7 @@ DEFAULTS: dict = {
 }
 
 # A tick longer than this while a game is running means the machine was asleep
-# or the daemon was stalled. Only this much of it counts as play, and the rest
-# counts as no-play time.
+# or the daemon was stalled. Only this much of it counts toward the daily cap.
 MAX_PLAY_TICK_S = 30.0
 
 
@@ -67,9 +75,8 @@ LIST_LOOSE_OP = {"exclude": "add", "extra_paths": "remove"}
 class State:
     active: dict = field(default_factory=lambda: copy.deepcopy(DEFAULTS))
     pending: list = field(default_factory=list)
-    used_s: float = 0.0
-    idle_s: float = 0.0
-    cooldown_elapsed_s: float | None = None
+    session_elapsed_s: float | None = None  # None = no session running
+    cooldown_elapsed_s: float | None = None  # None = not in cooldown
     daily_used_s: float = 0.0
     day_key: int | None = None
     warned: list = field(default_factory=list)
@@ -149,37 +156,34 @@ def evaluate(state: State, now_local: datetime) -> Status:
         waits.append(max(0.0, (next_reset(state) - now_local).total_seconds()))
     if reason:
         return Status(True, reason, max(waits), 0.0)
-    remaining = min(session_s - state.used_s, cap_s - state.daily_used_s)
+    session_left = session_s - (state.session_elapsed_s or 0.0)
+    remaining = min(session_left, cap_s - state.daily_used_s)
     return Status(False, None, 0.0, max(0.0, remaining))
 
 
-def _account(state: State, seconds: float, playing: bool) -> None:
-    if seconds <= 0:
-        return
+def session_ends_in(state: State) -> float | None:
+    """Seconds until the running session ends, or None if no session is running."""
+    if state.session_elapsed_s is None:
+        return None
+    return max(0.0, state.active["session_minutes"] * 60 - state.session_elapsed_s)
+
+
+def _pass_time(state: State, seconds: float) -> None:
+    """Advance the session and cooldown clocks. Both run on time, not on play."""
     cfg = state.active
-    if playing:
-        state.daily_used_s += seconds
+    if state.session_elapsed_s is not None:
+        state.session_elapsed_s += seconds
+        over = state.session_elapsed_s - cfg["session_minutes"] * 60
+        if over < 0:
+            return
+        # Session over: the cooldown starts at the moment it ended.
+        state.session_elapsed_s = None
+        state.cooldown_elapsed_s = 0.0
+        seconds = over
     if state.cooldown_elapsed_s is not None:
-        # Cooldown is a fixed length of time from when the budget ran out.
         state.cooldown_elapsed_s += seconds
         if state.cooldown_elapsed_s >= cfg["cooldown_minutes"] * 60:
             state.cooldown_elapsed_s = None
-            state.used_s = 0.0
-            state.idle_s = 0.0
-        return
-    if playing:
-        state.used_s += seconds
-        state.idle_s = 0.0
-    else:
-        state.idle_s += seconds
-        if state.idle_s >= cfg["cooldown_minutes"] * 60:
-            state.used_s = 0.0
-
-
-def _check_exhausted(state: State) -> None:
-    if state.cooldown_elapsed_s is None and state.used_s >= state.active["session_minutes"] * 60:
-        state.cooldown_elapsed_s = 0.0
-        state.idle_s = 0.0
 
 
 def _count_down_timers(state: State, elapsed: float) -> tuple[list, bool]:
@@ -208,10 +212,12 @@ def advance(state: State, elapsed: float, playing: bool, now_local: datetime) ->
     _maybe_daily_reset(state, now_local)
     applied, uninstall_due = _count_down_timers(state, elapsed)
 
-    play_part = min(elapsed, MAX_PLAY_TICK_S) if playing else 0.0
-    _account(state, elapsed - play_part, playing=False)
-    _account(state, play_part, playing=True)
-    _check_exhausted(state)
+    if playing:
+        state.daily_used_s += min(elapsed, MAX_PLAY_TICK_S)
+        if state.session_elapsed_s is None and not evaluate(state, now_local).blocked:
+            state.session_elapsed_s = 0.0  # a game launch starts a session
+    # Also runs with elapsed 0, so a session shortened by a config change ends right away.
+    _pass_time(state, elapsed)
 
     status = evaluate(state, now_local)
 
@@ -241,8 +247,8 @@ def downtime_credit(state: State, wall_now: float, mono_now: float) -> float:
 
     * Same boot (mono went forward): the daemon was killed or the user logged
       off. Games could have run unchecked, so nothing is credited.
-    * Rebooted (mono went backwards): credit the wall-clock gap as no-play
-      time, but never a negative one.
+    * Rebooted (mono went backwards): credit the wall-clock gap as time passed
+      (it advances a running session or cooldown), but never a negative one.
     """
     if state.last_wall is None or state.last_mono is None:
         return 0.0
@@ -370,8 +376,8 @@ def start_cooldown(state: State) -> bool:
     """Start the cooldown now, even with play time left. It's stricter, so no delay."""
     if state.cooldown_elapsed_s is not None:
         return False
+    state.session_elapsed_s = None
     state.cooldown_elapsed_s = 0.0
-    state.idle_s = 0.0
     return True
 
 

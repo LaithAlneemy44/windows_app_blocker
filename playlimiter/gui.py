@@ -16,8 +16,8 @@ REFRESH_MS = 2000
 
 # key, label, hint, type
 SCALAR_FIELDS = [
-    ("session_minutes", "Session length (minutes)", "Maximum continuous play", int),
-    ("cooldown_minutes", "Cooldown (minutes)", "Block after the session; also the break that refills it", int),
+    ("session_minutes", "Session length (minutes)", "Starts at game launch; keeps running if you quit", int),
+    ("cooldown_minutes", "Break / cooldown (minutes)", "Break after each session; games are blocked", int),
     ("daily_cap_minutes", "Daily cap (minutes)", "0 = no daily cap", int),
     ("daily_reset_time", "Daily reset time", "24h clock, e.g. 04:00", str),
     ("warning_minutes", "Warnings (minutes before)", "Comma-separated, e.g. 10, 2", "list"),
@@ -32,6 +32,10 @@ LIST_FIELDS = [
 
 def _when(seconds: float) -> str:
     return f"{datetime.now() + timedelta(seconds=seconds):%a %d %b %H:%M}"
+
+
+def _clock(seconds: float) -> str:
+    return f"{datetime.now() + timedelta(seconds=seconds):%H:%M}"
 
 
 def _fmt(value) -> str:
@@ -219,12 +223,15 @@ class SettingsWindow:
             st = rules.evaluate(state, datetime.now())
             cfg = state.active
             self.cooldown_button.state(["disabled"] if st.reason == "cooldown" else ["!disabled"])
+            ends_in = rules.session_ends_in(state)
             if st.reason == "cooldown":
-                line = f"Cooldown: play allowed again in {fmt_duration(st.wait_s)}"
+                line = f"Break: play allowed again at {_clock(st.wait_s)} (in {fmt_duration(st.wait_s)})"
             elif st.reason == "daily_cap":
                 line = f"Daily cap reached: play allowed again in {fmt_duration(st.wait_s)}"
+            elif ends_in is not None:
+                line = f"Session ends at {_clock(ends_in)} ({fmt_duration(ends_in)} left)"
             else:
-                line = f"Play time left: {fmt_duration(st.remaining_s)}"
+                line = f"Ready: launching a game starts a {fmt_duration(cfg['session_minutes'] * 60)} session"
             today = fmt_duration(state.daily_used_s) if state.daily_used_s else "0 min"
             line += f"   ·   Today: {today}"
             if state.uninstall_remaining_s is not None:

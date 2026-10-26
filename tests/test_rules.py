@@ -63,29 +63,34 @@ def test_budget_exhausts_and_blocks():
     assert sum(r.just_blocked for r in results) == 1
 
 
-def test_early_quit_and_relaunch_does_not_reset_budget():
+def test_nothing_counts_before_a_game_is_launched():
     state, engine, clock = make()
-    run(engine, clock, 89 * MIN, playing=True)
-    run(engine, clock, 10 * MIN, playing=False)  # short break
-    assert not status(engine, clock).blocked
-    assert status(engine, clock).remaining_s == pytest.approx(1 * MIN)
-    results = run(engine, clock, 1 * MIN, playing=True)
-    assert results[-1].status.blocked
-
-
-def test_budget_refills_only_after_full_continuous_gap():
-    state, engine, clock = make()
-    run(engine, clock, 60 * MIN, playing=True)
-    run(engine, clock, 179 * MIN, playing=False)
-    run(engine, clock, 2, playing=True)  # breaks the gap
-    run(engine, clock, 179 * MIN, playing=False)
-    assert state.used_s > 60 * MIN - 1
-    run(engine, clock, 2 * MIN, playing=False)  # now a full 180 min gap
-    assert state.used_s == 0
+    run(engine, clock, 5 * HOUR, playing=False, step=60)
+    assert state.session_elapsed_s is None
     assert status(engine, clock).remaining_s == 90 * MIN
 
 
-def test_refill_after_full_cooldown():
+def test_session_keeps_running_after_quitting_early():
+    state, engine, clock = make()
+    run(engine, clock, 60 * MIN, playing=True)
+    run(engine, clock, 29 * MIN, playing=False)  # quit with 30 min left
+    assert status(engine, clock).remaining_s == pytest.approx(1 * MIN)
+    results = run(engine, clock, 1 * MIN, playing=False)
+    assert results[-1].status.blocked and results[-1].status.reason == "cooldown"
+    assert sum(r.just_blocked for r in results) == 1
+    # The break started when the session ended (minute 90), not when the game closed.
+    assert status(engine, clock).wait_s == pytest.approx(180 * MIN)
+
+
+def test_early_quit_and_relaunch_does_not_reset_session():
+    state, engine, clock = make()
+    run(engine, clock, 89 * MIN, playing=True)
+    run(engine, clock, 30, playing=False)
+    results = run(engine, clock, 30, playing=True)
+    assert results[-1].status.blocked
+
+
+def test_new_full_session_after_cooldown_starts_on_next_launch():
     state, engine, clock = make()
     run(engine, clock, 90 * MIN, playing=True)
     run(engine, clock, 179 * MIN, playing=False)
@@ -93,6 +98,11 @@ def test_refill_after_full_cooldown():
     run(engine, clock, 1 * MIN, playing=False)
     s = status(engine, clock)
     assert not s.blocked and s.remaining_s == 90 * MIN
+    assert state.session_elapsed_s is None
+    run(engine, clock, 2 * HOUR, playing=False, step=60)  # waiting doesn't start anything
+    assert state.session_elapsed_s is None
+    run(engine, clock, 10 * MIN, playing=True)
+    assert status(engine, clock).remaining_s == pytest.approx(80 * MIN)
 
 
 def test_launch_during_cooldown_stays_blocked_and_reports_wait():
@@ -114,17 +124,26 @@ def test_warnings_fire_once_each():
 def test_relaunch_below_threshold_warns_once():
     state, engine, clock = make()
     run(engine, clock, 85 * MIN, playing=True)  # 10-min warning fires here
-    run(engine, clock, 5 * MIN, playing=False)
-    results = run(engine, clock, 4 * MIN, playing=True)
+    run(engine, clock, 2 * MIN, playing=False)
+    results = run(engine, clock, 2 * MIN, playing=True)
     assert [w for r in results for w in r.warnings] == [2]
 
 
-def test_long_tick_while_playing_counts_as_sleep_not_play():
+def test_no_warning_while_not_playing():
+    state, engine, clock = make()
+    run(engine, clock, 10 * MIN, playing=True)
+    results = run(engine, clock, 80 * MIN, playing=False)
+    assert not any(r.warnings for r in results)
+
+
+def test_sleep_with_game_open_counts_for_session_not_daily_cap():
     state, engine, clock = make()
     run(engine, clock, 10 * MIN, playing=True)
     clock.advance(8 * HOUR)  # laptop slept with game open
     engine.tick(clock.wall, clock.mono, clock.local, True)
-    assert state.used_s <= rules.MAX_PLAY_TICK_S  # refilled by the sleep, then 30 s of play
+    # Session (90) and cooldown (180) both ran out during the sleep.
+    assert state.cooldown_elapsed_s is None
+    assert state.daily_used_s <= 10 * MIN + rules.MAX_PLAY_TICK_S
 
 
 # ---------------------------------------------------------------- daily cap
@@ -166,14 +185,15 @@ def test_reboot_during_cooldown_keeps_cooldown_and_credits_downtime():
     assert s.wait_s == pytest.approx(90 * MIN)
 
 
-def test_restart_mid_session_keeps_budget():
+def test_reboot_mid_session_keeps_session_and_counts_the_reboot():
     state, engine, clock = make()
     run(engine, clock, 45 * MIN, playing=True)
     saved = roundtrip(state)
     clock.reboot(2 * MIN)
     engine2 = Engine(saved)
     engine2.start(clock.wall, clock.mono, clock.local)
-    assert rules.evaluate(saved, clock.local).remaining_s == pytest.approx(45 * MIN)
+    # The session clock keeps running through the reboot.
+    assert rules.evaluate(saved, clock.local).remaining_s == pytest.approx(43 * MIN)
 
 
 def test_same_boot_restart_credits_no_downtime():

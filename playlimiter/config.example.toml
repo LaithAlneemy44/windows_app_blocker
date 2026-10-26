@@ -2,11 +2,10 @@
 # The running copy lives at %LOCALAPPDATA%\PlayLimiter\config.toml.
 # Stricter changes apply right away. Looser ones wait loosen_delay_hours.
 
-# Maximum continuous play before a cooldown starts.
+# Session length. Launching a game starts it, and it keeps running even if you quit.
 session_minutes = 90
 
-# How long games stay blocked once the session budget is used up.
-# The budget also refills after a no-play gap this long.
+# Break after each session. Games are blocked during it.
 cooldown_minutes = 180
 
 # Total play per day. 0 = no daily cap.

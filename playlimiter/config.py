@@ -90,8 +90,8 @@ def _toml_value(value) -> str:
 
 
 _COMMENTS = {
-    "session_minutes": "Maximum continuous play before a cooldown starts.",
-    "cooldown_minutes": "Block length once the session is used up; also the break that refills it.",
+    "session_minutes": "Session length. Launching a game starts it, and it keeps running even if you quit.",
+    "cooldown_minutes": "Break after each session. Games are blocked during it.",
     "daily_cap_minutes": "Total play per day. 0 = no daily cap.",
     "daily_reset_time": "When the daily cap resets (24h clock, local time).",
     "warning_minutes": "Toast warnings this many minutes before the limit.",

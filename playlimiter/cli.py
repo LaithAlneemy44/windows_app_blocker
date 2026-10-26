@@ -24,17 +24,18 @@ def cmd_status(_args) -> int:
     now = datetime.now()
     cfg = state.active
     status = rules.evaluate(state, now)
-    session_left = max(0.0, cfg["session_minutes"] * 60 - state.used_s)
+    ends_in = rules.session_ends_in(state)
 
     if status.reason == "cooldown":
-        print(f"Cooldown:       {fmt_duration(status.wait_s)} remaining")
+        until = now + timedelta(seconds=status.wait_s)
+        print(f"Cooldown:       {fmt_duration(status.wait_s)} remaining (until {until:%H:%M})")
     elif status.reason == "daily_cap":
         print(f"Daily cap hit:  play allowed again in {fmt_duration(status.wait_s)}")
+    elif ends_in is not None:
+        until = now + timedelta(seconds=ends_in)
+        print(f"Session:        {fmt_duration(ends_in)} left, ends {until:%H:%M} (keeps running if you quit)")
     else:
-        print(f"Budget left:    {fmt_duration(session_left)} of {cfg['session_minutes']} min")
-        if state.used_s > 0:
-            refill = max(0.0, cfg["cooldown_minutes"] * 60 - state.idle_s)
-            print(f"                refills after {fmt_duration(refill)} more without playing")
+        print(f"Session:        not started; launching a game starts a {cfg['session_minutes']} min session")
     cap = cfg["daily_cap_minutes"]
     used = fmt_duration(state.daily_used_s) if state.daily_used_s else "0 min"
     print(f"Today:          {used} played" + (f" of {cap} min cap" if cap else " (no daily cap)"))

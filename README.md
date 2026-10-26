@@ -11,13 +11,12 @@ A small Windows 10/11 background app that limits playtime for Steam games (and a
 ## How it works
 
 - Every 2 seconds it lists running processes. Any program under a Steam library's `steamapps\common` folder, or under one of your `extra_paths`, counts as a game. Steam libraries are found from the registry and `libraryfolders.vdf`.
-- **Session budget** (`session_minutes`): play time is counted only while a game is running. When the budget runs out, games are blocked for `cooldown_minutes`.
-- **Refills only after a real break.** The budget refills only after a continuous no-play gap of `cooldown_minutes`. Quitting at 89 of 90 minutes and relaunching does not reset it.
+- **Sessions** (`session_minutes`): launching a game starts a session. Its clock keeps running even if you quit early, so you can't save time for later. When it reaches `session_minutes`, the break (`cooldown_minutes`) starts and games are blocked. After the break, nothing counts until you launch a game again, which starts a fresh session. For example, with a 10-minute session: play 9 minutes and quit, the session still ends at minute 10, and the break starts then.
 - **Optional daily cap** (`daily_cap_minutes`, 0 = off), resetting at `daily_reset_time`.
 - **Warnings**: at `warning_minutes` before the limit, you get a sound, a toast notification, and a banner across the top of the screen. Windows hides toasts during full-screen games, but the banner still shows. It stays above the game, can't be clicked, and never takes focus. When time runs out, the banner counts down the grace period.
 - **Closing games**: at the limit, PlayLimiter posts `WM_CLOSE` to every top-level window of each game process. It force-terminates a game only if it is still running after `grace_seconds`. A game launched while blocked gets the same treatment, plus a toast saying when play is allowed again.
 - **Delayed loosening**: stricter settings apply immediately. Looser ones, such as a longer session, shorter cooldown, higher or disabled cap, new exclusions or longer grace, wait `loosen_delay_hours` (default 24). Uninstalling waits the same amount of time.
-- **Clock-safe**: durations are measured with the system uptime counter, not the wall clock. Setting the clock back or forward does not shorten a cooldown, refill the budget, or speed up pending changes. State survives restarts and reboots.
+- **Clock-safe**: durations are measured with the system uptime counter, not the wall clock. Setting the clock back or forward does not shorten a session or cooldown, or speed up pending changes. State survives restarts and reboots.
 
 ## Install
 
@@ -53,8 +52,8 @@ Before saving, it lists which changes apply immediately and which have to wait.
 You can also edit `%LOCALAPPDATA%\PlayLimiter\config.toml` directly. Changes are picked up within a couple of seconds. If the file is invalid, the current settings are kept, and the error is logged and shown as a toast.
 
 ```toml
-session_minutes = 90        # max continuous play
-cooldown_minutes = 180      # block length after the budget runs out; also the refill gap
+session_minutes = 90        # session length; starts when you launch a game
+cooldown_minutes = 180      # break after each session; games are blocked during it
 daily_cap_minutes = 0       # 0 = off
 daily_reset_time = "04:00"
 warning_minutes = [10, 2]
@@ -80,7 +79,7 @@ Notes:
 
 | Command | What it does |
 |---|---|
-| `playlimiter status` | Budget left, cooldown remaining, today's usage, active settings, pending changes and when they apply |
+| `playlimiter status` | Session time left, cooldown remaining, today's usage, active settings, pending changes and when they apply |
 | `playlimiter settings` | Open the settings window |
 | `playlimiter install` | Create the config if missing, register the logon task, start the app, add the desktop shortcut |
 | `playlimiter shortcut` | Recreate the desktop shortcut |
@@ -93,7 +92,7 @@ When a scheduled uninstall comes due, the app deletes its logon task, its deskto
 Files, all in `%LOCALAPPDATA%\PlayLimiter`:
 
 - `config.toml`: your settings
-- `state.json`: active settings, budget, cooldown, pending changes. Written atomically.
+- `state.json`: active settings, session, cooldown, pending changes. Written atomically.
 - `playlimiter.log`
 
 ## Anti-cheat note
@@ -104,9 +103,9 @@ PlayLimiter only reads the process list, reads Steam's `libraryfolders.vdf`, and
 
 This is friction, not security. Anyone with access to the account can end the process in Task Manager, delete the scheduled task, or edit `state.json`. Some more specific behaviour:
 
-- **Restarting the app.** If the app is restarted without a reboot, the downtime is not counted as a break, since games could have run unchecked.
+- **Restarting the app.** If the app is restarted without a reboot, the downtime is not counted toward a session or cooldown, since games could have run unchecked.
 - **Reboots.** After a reboot, the gap is credited as no-play time based on the wall clock, and never as negative time.
-- **Sleep.** If the PC sleeps with a game open, the sleep counts as a break, not as play.
+- **Sleep.** Sleep counts toward a running session or cooldown, like any other time. It never counts toward the daily cap, which only counts time a game is actually running.
 
 ## Development
 

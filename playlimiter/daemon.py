@@ -195,6 +195,10 @@ class Daemon:
                     banner = again
                 toast(f"PlayLimiter: {why}", f"{body} {again}", sound=True)
                 overlay.show_async(why, banner, max(grace, BLOCKED_BANNER_MIN_S))
+            elif result.just_blocked and not games:
+                # Session ran out after you'd already quit: just say when the break ends.
+                until = datetime.now() + timedelta(seconds=status.wait_s)
+                toast("PlayLimiter: session over", f"Break until {until:%H:%M}.")
             for pid in new:
                 self.closer.close(pid, games[pid], mono, grace)
         self.cooldown_requested = False
@@ -209,12 +213,14 @@ class Daemon:
         while True:
             events = self.check_config() | self.check_requests()
             games = self.scanner.scan()
+            had_session = self.state.session_elapsed_s is not None
             result = self.engine.tick(time.time(), winsys.uptime_s(), datetime.now(), playing=bool(games))
             self.handle_tick(result, games)
             if result.uninstall_due:
                 perform_uninstall()
                 return
-            events |= bool(result.applied or result.warnings or result.just_blocked)
+            session_changed = had_session != (self.state.session_elapsed_s is not None)
+            events |= bool(result.applied or result.warnings or result.just_blocked or session_changed)
             if events or time.monotonic() - self.last_save >= SAVE_EVERY_S:
                 self.save()
             time.sleep(POLL_S)

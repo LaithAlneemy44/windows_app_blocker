@@ -74,6 +74,8 @@ def find_steam_dir() -> Path | None:
 
 def steam_common_dirs() -> list[Path]:
     """Every <library>\\steamapps\\common folder that exists."""
+    if os.environ.get("PLAYLIMITER_IGNORE_STEAM"):
+        return []  # for test runs, so they never touch real games
     steam = find_steam_dir()
     if steam is None:
         log.warning("Steam install not found")
