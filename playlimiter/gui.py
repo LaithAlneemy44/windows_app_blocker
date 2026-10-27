@@ -169,9 +169,9 @@ class SettingsWindow:
             preview = copy.deepcopy(state)
             result = rules.reconcile(preview, desired)
             lines = []
-            if result.tightened:
+            if result.immediate:
                 lines.append("Applies immediately:")
-                lines += [f"  • {t}" for t in result.tightened]
+                lines += [f"  • {t}" for t in result.immediate]
             if preview.pending:
                 lines.append(f"\nLooser, so they wait {_fmt(state.active['loosen_delay_hours'])} h:")
                 lines += [
@@ -220,7 +220,7 @@ class SettingsWindow:
         if state is None:
             self.status_var.set("PlayLimiter hasn't run yet." if not running else "Starting…")
         else:
-            st = rules.evaluate(state, datetime.now())
+            st = rules.evaluate(state, rules.honest_local(state, datetime.now()))
             cfg = state.active
             self.cooldown_button.state(["disabled"] if st.reason == "cooldown" else ["!disabled"])
             ends_in = rules.session_ends_in(state)
@@ -234,6 +234,8 @@ class SettingsWindow:
                 line = f"Ready: launching a game starts a {fmt_duration(cfg['session_minutes'] * 60)} session"
             today = fmt_duration(state.daily_used_s) if state.daily_used_s else "0 min"
             line += f"   ·   Today: {today}"
+            if state.free_change_window:
+                line += "\n✓ Free-change window: changes apply instantly until you launch a game."
             if state.uninstall_remaining_s is not None:
                 line += f"\nUninstall scheduled for {_when(state.uninstall_remaining_s)}"
             if not running:

@@ -268,7 +268,7 @@ def test_stricter_changes_apply_immediately(key, value):
     state, engine, clock = make()
     r = rules.reconcile(state, desired(state, **{key: value}))
     assert state.active[key] == value
-    assert r.tightened and not r.new_pending and not state.pending
+    assert r.immediate and not r.new_pending and not state.pending
 
 
 @pytest.mark.parametrize(
@@ -277,12 +277,13 @@ def test_stricter_changes_apply_immediately(key, value):
      ("loosen_delay_hours", 1), ("daily_reset_time", "06:00")],
 )
 def test_looser_changes_are_delayed(key, value):
-    state, engine, clock = make()
+    # 8 h delay from 12:00, so the change comes due before the 04:00 reset.
+    state, engine, clock = make(loosen_delay_hours=8)
     old = state.active[key]
     rules.reconcile(state, desired(state, **{key: value}))
     assert state.active[key] == old
     assert len(state.pending) == 1
-    run(engine, clock, 24 * HOUR - 60, playing=False, step=60)
+    run(engine, clock, 8 * HOUR - 60, playing=False, step=60)
     assert state.active[key] == old
     results = run(engine, clock, 120, playing=False, step=60)
     assert state.active[key] == value
@@ -334,13 +335,13 @@ def test_lowering_delay_cannot_speed_up_itself_or_others():
 
 
 def test_moderating_a_pending_change_keeps_its_timer():
-    state, engine, clock = make()
+    state, engine, clock = make(loosen_delay_hours=12)
     rules.reconcile(state, desired(state, session_minutes=150))
-    run(engine, clock, 20 * HOUR, playing=False, step=60)
+    run(engine, clock, 10 * HOUR, playing=False, step=60)
     rules.reconcile(state, desired(state, session_minutes=120))  # less loose than pending
-    assert state.pending[0]["remaining_s"] == pytest.approx(4 * HOUR)
+    assert state.pending[0]["remaining_s"] == pytest.approx(2 * HOUR)
     rules.reconcile(state, desired(state, session_minutes=200))  # looser again: restart
-    assert state.pending[0]["remaining_s"] == 24 * HOUR
+    assert state.pending[0]["remaining_s"] == 12 * HOUR
 
 
 def test_pending_survives_restart_and_ignores_clock_jump():
@@ -365,6 +366,80 @@ def test_start_cooldown_early_blocks_now_and_refills_after():
     run(engine, clock, 180 * MIN, playing=False, step=60)
     s = status(engine, clock)
     assert not s.blocked and s.remaining_s == 90 * MIN
+
+
+# ---------------------------------------------------------------- free-change window
+
+def to_next_reset(engine, clock):
+    """Advance (not playing) until just past the next 04:00."""
+    target = rules.next_reset(engine.state) + timedelta(minutes=1)
+    run(engine, clock, (target - clock.local).total_seconds(), playing=False, step=60)
+
+
+def test_window_opens_at_reset_and_applies_looser_change_instantly():
+    state, engine, clock = make()
+    to_next_reset(engine, clock)
+    assert state.free_change_window
+    r = rules.reconcile(state, desired(state, session_minutes=240, cooldown_minutes=10))
+    assert state.active["session_minutes"] == 240 and state.active["cooldown_minutes"] == 10
+    assert not state.pending and not r.new_pending and len(r.immediate) == 2
+
+
+def test_window_closes_at_first_game_then_looser_waits():
+    state, engine, clock = make()
+    to_next_reset(engine, clock)
+    run(engine, clock, 10, playing=True)
+    assert not state.free_change_window
+    rules.reconcile(state, desired(state, session_minutes=240))
+    assert state.active["session_minutes"] == 90 and len(state.pending) == 1
+
+
+def test_pending_changes_apply_when_window_opens():
+    state, engine, clock = make()  # 12:00, reset at 04:00 tomorrow
+    rules.reconcile(state, desired(state, session_minutes=120))
+    results = []
+    target = rules.next_reset(state) + timedelta(minutes=1)
+    results = run(engine, clock, (target - clock.local).total_seconds(), playing=False, step=60)
+    assert state.active["session_minutes"] == 120 and not state.pending
+    assert any(r.applied for r in results)
+
+
+def test_reset_while_playing_closes_window_straight_away():
+    state, engine, clock = make(session_minutes=1000, cooldown_minutes=0)
+    target = rules.next_reset(state) + timedelta(minutes=1)
+    run(engine, clock, (target - clock.local).total_seconds(), playing=True, step=20)
+    assert not state.free_change_window
+
+
+def test_clock_set_back_does_not_reopen_window():
+    state, engine, clock = make()
+    to_next_reset(engine, clock)
+    run(engine, clock, 10, playing=True)
+    clock.local -= timedelta(days=1)
+    run(engine, clock, 60, playing=False)
+    clock.local += timedelta(days=1)
+    run(engine, clock, 60, playing=False)
+    assert not state.free_change_window
+
+
+def test_clock_set_forward_does_not_open_window():
+    state, engine, clock = make()
+    run(engine, clock, 10, playing=True)
+    clock.wall += 2 * 24 * HOUR
+    clock.local += timedelta(days=2)
+    run(engine, clock, 60, playing=False)
+    assert not state.free_change_window
+    # Putting the clock back right again doesn't penalise you: the real reset still works.
+    clock.wall -= 2 * 24 * HOUR
+    clock.local -= timedelta(days=2)
+    to_next_reset(engine, clock)
+    assert state.free_change_window
+
+
+def test_window_does_not_speed_up_uninstall():
+    state, engine, clock = make()
+    to_next_reset(engine, clock)
+    assert rules.request_uninstall(state) == 24 * HOUR
 
 
 # ---------------------------------------------------------------- uninstall

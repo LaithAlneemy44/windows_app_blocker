@@ -23,7 +23,7 @@ def cmd_status(_args) -> int:
         return 0
     now = datetime.now()
     cfg = state.active
-    status = rules.evaluate(state, now)
+    status = rules.evaluate(state, rules.honest_local(state, now))
     ends_in = rules.session_ends_in(state)
 
     if status.reason == "cooldown":
@@ -36,6 +36,8 @@ def cmd_status(_args) -> int:
         print(f"Session:        {fmt_duration(ends_in)} left, ends {until:%H:%M} (keeps running if you quit)")
     else:
         print(f"Session:        not started; launching a game starts a {cfg['session_minutes']} min session")
+    if state.free_change_window:
+        print("Free-change:    open; setting changes apply instantly until you launch a game")
     cap = cfg["daily_cap_minutes"]
     used = fmt_duration(state.daily_used_s) if state.daily_used_s else "0 min"
     print(f"Today:          {used} played" + (f" of {cap} min cap" if cap else " (no daily cap)"))

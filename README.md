@@ -16,7 +16,8 @@ A small Windows 10/11 background app that limits playtime for Steam games (and a
 - **Warnings**: at `warning_minutes` before the limit, you get a sound, a toast notification, and a banner across the top of the screen. Windows hides toasts during full-screen games, but the banner still shows. It stays above the game, can't be clicked, and never takes focus. When time runs out, the banner counts down the grace period.
 - **Closing games**: at the limit, PlayLimiter posts `WM_CLOSE` to every top-level window of each game process. It force-terminates a game only if it is still running after `grace_seconds`. A game launched while blocked gets the same treatment, plus a toast saying when play is allowed again.
 - **Delayed loosening**: stricter settings apply immediately. Looser ones, such as a longer session, shorter cooldown, higher or disabled cap, new exclusions or longer grace, wait `loosen_delay_hours` (default 24). Uninstalling waits the same amount of time.
-- **Clock-safe**: durations are measured with the system uptime counter, not the wall clock. Setting the clock back or forward does not shorten a session or cooldown, or speed up pending changes. State survives restarts and reboots.
+- **Free-change window**: at the daily reset (`daily_reset_time`), any waiting changes apply, and a window opens in which every setting change applies instantly. It closes when you launch your first game of the day. This lets you set up the day's limits before you start playing, but not loosen them mid-day. Uninstalling still waits the full delay.
+- **Clock-safe**: durations are measured with the system uptime counter, not the wall clock. Setting the clock back or forward does not shorten a session or cooldown, speed up pending changes, or trigger an early daily reset. State survives restarts and reboots.
 
 ## Install
 

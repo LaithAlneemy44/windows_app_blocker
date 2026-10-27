@@ -80,9 +80,12 @@ class State:
     daily_used_s: float = 0.0
     day_key: int | None = None
     warned: list = field(default_factory=list)
+    # Open from the daily reset until the first game of the day: all setting changes apply instantly.
+    free_change_window: bool = False
     uninstall_remaining_s: float | None = None
     last_wall: float | None = None
     last_mono: float | None = None
+    clock_skew_s: float = 0.0  # net wall-clock changes seen while running (see honest_local)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -129,13 +132,25 @@ def next_reset(state: State) -> datetime:
     return datetime.fromordinal(state.day_key + 1) + _reset_offset(state.active["daily_reset_time"])
 
 
-def _maybe_daily_reset(state: State, now_local: datetime) -> None:
+def _maybe_daily_reset(state: State, now_local: datetime) -> list:
+    """Reset the daily counter at the reset time and open the free-change window.
+
+    Returns the pending changes that were applied because the window opened.
+    """
     key = day_key(now_local, state.active["daily_reset_time"])
     if state.day_key is None:
         state.day_key = key
-    elif key > state.day_key:  # never move backwards
-        state.day_key = key
-        state.daily_used_s = 0.0
+        return []
+    if key <= state.day_key:  # never move backwards
+        return []
+    state.day_key = key
+    state.daily_used_s = 0.0
+    state.free_change_window = True
+    applied = state.pending
+    for p in applied:
+        _apply_pending(state.active, p)
+    state.pending = []
+    return applied
 
 
 # ---------------------------------------------------------------- evaluation
@@ -209,10 +224,12 @@ def advance(state: State, elapsed: float, playing: bool, now_local: datetime) ->
     elapsed = max(0.0, elapsed)
     blocked_before = evaluate(state, now_local).blocked
 
-    _maybe_daily_reset(state, now_local)
-    applied, uninstall_due = _count_down_timers(state, elapsed)
+    applied = _maybe_daily_reset(state, now_local)
+    timed_out, uninstall_due = _count_down_timers(state, elapsed)
+    applied += timed_out
 
     if playing:
+        state.free_change_window = False  # the first game of the day closes it
         state.daily_used_s += min(elapsed, MAX_PLAY_TICK_S)
         if state.session_elapsed_s is None and not evaluate(state, now_local).blocked:
             state.session_elapsed_s = 0.0  # a game launch starts a session
@@ -257,6 +274,16 @@ def downtime_credit(state: State, wall_now: float, mono_now: float) -> float:
     return max(0.0, wall_now - state.last_wall)
 
 
+def honest_local(state: State, now_local: datetime) -> datetime:
+    """Local time with any forward clock change taken back out.
+
+    Used for the daily reset, so moving the clock forward can't trigger an
+    early reset (or open the free-change window). Backward changes need no
+    correction: the stored day never moves backwards anyway.
+    """
+    return now_local - timedelta(seconds=max(0.0, state.clock_skew_s))
+
+
 class Engine:
     """Wraps a State and turns (wall, mono) clock readings into trusted elapsed time."""
 
@@ -266,13 +293,18 @@ class Engine:
     def start(self, wall: float, mono: float, now_local: datetime) -> TickResult:
         credit = downtime_credit(self.state, wall, mono)
         self._stamp(wall, mono)
-        return advance(self.state, credit, playing=False, now_local=now_local)
+        return advance(self.state, credit, playing=False, now_local=honest_local(self.state, now_local))
 
     def tick(self, wall: float, mono: float, now_local: datetime, playing: bool) -> TickResult:
-        last = self.state.last_mono
-        elapsed = 0.0 if last is None else max(0.0, mono - last)
+        s = self.state
+        if s.last_mono is None or s.last_wall is None:
+            elapsed = 0.0
+        else:
+            elapsed = max(0.0, mono - s.last_mono)
+            # Wall-clock movement that uptime doesn't explain = the clock was changed.
+            s.clock_skew_s += (wall - s.last_wall) - (mono - s.last_mono)
         self._stamp(wall, mono)
-        return advance(self.state, elapsed, playing, now_local)
+        return advance(s, elapsed, playing, honest_local(s, now_local))
 
     def _stamp(self, wall: float, mono: float) -> None:
         self.state.last_wall = wall
@@ -302,7 +334,7 @@ def describe_change(p: dict) -> str:
 
 @dataclass
 class ReconcileResult:
-    tightened: list = field(default_factory=list)  # descriptions applied immediately
+    immediate: list = field(default_factory=list)  # descriptions applied immediately
     new_pending: list = field(default_factory=list)  # pending entries created or restarted
 
 
@@ -312,10 +344,19 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
     Stricter changes apply immediately. Looser changes become pending for
     ``loosen_delay_hours`` (the *active* value, so lowering the delay can't
     speed itself up). Pending changes that are no longer wanted are dropped.
+
+    While the free-change window is open (after the daily reset, until the
+    first game of the day), every change applies immediately.
     """
     active = state.active
     delay_s = active["loosen_delay_hours"] * 3600
     result = ReconcileResult()
+
+    if state.free_change_window:
+        result.immediate = [f"{k} -> {desired[k]}" for k in DEFAULTS if desired[k] != active[k]]
+        state.active = copy.deepcopy(desired)
+        state.pending = []
+        return result
 
     for key, is_looser in LOOSER.items():
         old, new = active[key], desired[key]
@@ -326,7 +367,7 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
             continue
         if not is_looser(old, new):
             active[key] = copy.deepcopy(new)
-            result.tightened.append(f"{key} -> {new}")
+            result.immediate.append(f"{key} -> {new}")
             continue
         if existing and (existing["value"] == new or not is_looser(existing["value"], new)):
             # Same or less loose than what was already waiting: keep its timer.
@@ -345,7 +386,7 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
 
         for item in sorted(strict_items):
             _apply_pending(active, {"key": key, "op": strict_op, "item": item})
-            result.tightened.append(describe_change({"key": key, "op": strict_op, "item": item}))
+            result.immediate.append(describe_change({"key": key, "op": strict_op, "item": item}))
 
         kept = []
         for p in state.pending:

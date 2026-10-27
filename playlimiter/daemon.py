@@ -117,9 +117,9 @@ class Daemon:
             toast("PlayLimiter: config error", f"{e}. Keeping current settings.")
             return False
         result = rules.reconcile(self.state, desired)
-        if result.tightened:
-            log.info("Applied immediately: %s", "; ".join(result.tightened))
-            toast("PlayLimiter: stricter settings active", "; ".join(result.tightened))
+        if result.immediate:
+            log.info("Applied immediately: %s", "; ".join(result.immediate))
+            toast("PlayLimiter: settings applied", "; ".join(result.immediate))
         for p in result.new_pending:
             when = datetime.now() + timedelta(seconds=p["remaining_s"])
             log.info("Pending until %s: %s", when, rules.describe_change(p))
@@ -129,7 +129,7 @@ class Daemon:
                 "PlayLimiter: looser settings pending",
                 f"{'; '.join(rules.describe_change(p) for p in result.new_pending)} — takes effect {when:%a %d %b %H:%M}",
             )
-        return bool(result.tightened or result.new_pending)
+        return bool(result.immediate or result.new_pending)
 
     def check_requests(self) -> bool:
         d = store.requests_dir()
