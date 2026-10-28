@@ -343,12 +343,13 @@ class ReconcileResult:
         return self.immediate
 
 
-def reconcile(state: State, desired: dict) -> ReconcileResult:
+def reconcile(state: State, desired: dict, looser: dict = LOOSER, list_loose_op: dict = LIST_LOOSE_OP) -> ReconcileResult:
     """Compare the edited config with the active one.
 
     Stricter changes apply immediately. Looser changes become pending for
     ``loosen_delay_hours`` (the *active* value, so lowering the delay can't
     speed itself up). Pending changes that are no longer wanted are dropped.
+    ``looser``/``list_loose_op`` let another app (Browser Curfew) reuse this with its own settings.
 
     While the free-change window is open (after the daily reset, until the
     first game of the day), every change applies immediately.
@@ -359,12 +360,12 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
 
     # getattr: Browser Curfew passes its own State, which has no free-change window.
     if getattr(state, "free_change_window", False):
-        result.immediate = [f"{k} -> {desired[k]}" for k in DEFAULTS if desired[k] != active[k]]
+        result.immediate = [f"{k} -> {desired[k]}" for k in desired if desired[k] != active.get(k)]
         state.active = copy.deepcopy(desired)
         state.pending = []
         return result
 
-    for key, is_looser in LOOSER.items():
+    for key, is_looser in looser.items():
         old, new = active[key], desired[key]
         existing = next((p for p in state.pending if p["key"] == key and "op" not in p), None)
         if existing:
@@ -383,7 +384,7 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
             result.new_pending.append(entry)
         state.pending.append(entry)
 
-    for key, loose_op in LIST_LOOSE_OP.items():
+    for key, loose_op in list_loose_op.items():
         old, new = set(active[key]), set(desired[key])
         added, removed = new - old, old - new
         strict_items = removed if loose_op == "add" else added
