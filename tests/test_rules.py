@@ -436,6 +436,19 @@ def test_clock_set_forward_does_not_open_window():
     assert state.free_change_window
 
 
+def test_reconcile_accepts_a_state_without_free_change_window():
+    # Browser Curfew reuses reconcile() with its own State class.
+    class OtherState:
+        def __init__(self):
+            self.active = copy.deepcopy(DEFAULTS)
+            self.pending = []
+
+    other = OtherState()
+    r = rules.reconcile(other, desired(other, session_minutes=60, cooldown_minutes=10))
+    assert r.tightened == r.immediate == ["session_minutes -> 60"]
+    assert len(other.pending) == 1
+
+
 def test_window_does_not_speed_up_uninstall():
     state, engine, clock = make()
     to_next_reset(engine, clock)

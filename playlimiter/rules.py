@@ -337,6 +337,11 @@ class ReconcileResult:
     immediate: list = field(default_factory=list)  # descriptions applied immediately
     new_pending: list = field(default_factory=list)  # pending entries created or restarted
 
+    @property
+    def tightened(self) -> list:
+        # Old name, still used by Browser Curfew (curfew/daemon.py, curfew/gui.py).
+        return self.immediate
+
 
 def reconcile(state: State, desired: dict) -> ReconcileResult:
     """Compare the edited config with the active one.
@@ -352,7 +357,8 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
     delay_s = active["loosen_delay_hours"] * 3600
     result = ReconcileResult()
 
-    if state.free_change_window:
+    # getattr: Browser Curfew passes its own State, which has no free-change window.
+    if getattr(state, "free_change_window", False):
         result.immediate = [f"{k} -> {desired[k]}" for k in DEFAULTS if desired[k] != active[k]]
         state.active = copy.deepcopy(desired)
         state.pending = []
