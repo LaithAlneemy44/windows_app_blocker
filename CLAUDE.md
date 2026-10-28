@@ -8,7 +8,7 @@ Two Windows 10/11 self-control apps in one pip install (`py -m pip install .`):
 
 - **PlayLimiter** (`playlimiter/`): limits playtime for Steam/other games. It has been in use for a while.
   Session model: launching a game starts a session whose clock keeps running even if the game is closed; when it ends the break (`cooldown_minutes`) starts; nothing counts until the next launch. The daily cap counts only time a game is open. A **free-change window** opens at `daily_reset_time` (pending changes apply, and all setting changes apply instantly) and closes at the first game of the day.
-- **Browser Curfew** (`curfew/`): installed and running on the Windows PC since 2026-10-28. It closes browsers every night from 22:30 until 07:00. It has a separate logon task (`BrowserCurfew`), data folder (`%LOCALAPPDATA%\BrowserCurfew`), settings window and desktop shortcut ("Browser Curfew", moon icon). It shares no settings or state with PlayLimiter.
+- **Browser Curfew** (`curfew/`): installed and running on the Windows PC since 2026-10-28. It closes browsers, chat/work apps (Discord, Teams, Outlook; the `apps` list, formerly `browsers`) and, with `close_games`, Steam games (via `playlimiter.detect.GameScanner`) every night from 22:30 until 07:00. Old `browsers` keys in config.toml and state.json are migrated to `apps`. It has a separate logon task (`BrowserCurfew`), data folder (`%LOCALAPPDATA%\BrowserCurfew`), settings window and desktop shortcut ("Browser Curfew", moon icon). It shares no settings or state with PlayLimiter.
 
 The user usually edits on a MacBook and runs the apps on their Windows PC, syncing through GitHub. The README has the user-facing details for both apps.
 
@@ -46,9 +46,9 @@ Curfew reuses `playlimiter.rules.reconcile()` with its own `State`. PlayLimiter'
 
 ## Testing
 
-- On Windows: `py -m pip install -e ".[dev]"` then `py -m pytest` (87 tests).
+- On Windows: `py -m pip install -e ".[dev]"` then `py -m pytest` (93 tests).
 - On the Mac, Windows-only modules don't import. Tests there use a throwaway venv plus a pytest plugin that stubs `winreg`/`win32*`/`winsound` (`-p winstubs`). Don't commit stubs.
-- **Live tests on the user's PC must never touch their real games or browsers** (one test once closed a real game). Run a sandbox copy with its own `LOCALAPPDATA` (each data folder gets its own single-instance mutex, so it runs alongside the real apps), set `PLAYLIMITER_IGNORE_STEAM=1` so PlayLimiter skips Steam libraries, and give Curfew `browsers = ["<scratch folder>"]` with a renamed copy of `PING.EXE` as the stand-in. Set `PYTHONPATH` to the repo so the banner subprocess uses the repo code.
+- **Live tests on the user's PC must never touch their real games or browsers** (one test once closed a real game). Run a sandbox copy with its own `LOCALAPPDATA` (each data folder gets its own single-instance mutex, so it runs alongside the real apps), set `PLAYLIMITER_IGNORE_STEAM=1` so PlayLimiter skips Steam libraries, and give Curfew `apps = ["<scratch folder>"]` with a renamed copy of `PING.EXE` as the stand-in. Set `PYTHONPATH` to the repo so the banner subprocess uses the repo code.
 
 ## Windows verification (done 2026-10-28, sandboxed)
 

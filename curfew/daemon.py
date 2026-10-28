@@ -1,4 +1,4 @@
-"""Background loop: find browsers, check the curfew, warn, close them."""
+"""Background loop: find browsers, chat apps and games, check the curfew, warn, close them."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ from playlimiter.notify import set_app_name, toast
 
 from . import rules, store, winsys
 from .config import parse_config, parse_time
-from .detect import BrowserScanner
+from .detect import AppScanner
 
 log = logging.getLogger("curfew")
 
@@ -96,7 +96,7 @@ class Daemon:
             state = rules.State(active=json.loads(json.dumps(active)))
         self.state = state
         self.engine = rules.Engine(state)
-        self.scanner = BrowserScanner()
+        self.scanner = AppScanner()
         self.closer = Closer()
         self.config_mtime: float | None = None
         self.last_save = 0.0
@@ -165,47 +165,47 @@ class Daemon:
         save_state(self.state)
         self.last_save = time.monotonic()
 
-    def handle_tick(self, result: rules.TickResult, browsers: dict[int, str]) -> None:
+    def handle_tick(self, result: rules.TickResult, apps: dict[int, str]) -> None:
         for p in result.applied:
             log.info("Pending change now active: %s", pl_rules.describe_change(p))
             toast("Browser Curfew: setting changed", f"Now active: {pl_rules.describe_change(p)}")
 
         cfg = self.state.active
-        self.scanner.configure(cfg["browsers"])
+        self.scanner.configure(cfg["apps"], cfg["close_games"])
         status = result.status
 
         if result.warnings:
             # The real time left, not the threshold crossed: tonight may have just been moved
             # to a few minutes away, which crosses the 15-minute threshold with far less left.
             mins = max(1, math.ceil((status.starts_at - datetime.now()).total_seconds() / 60))
-            left = f"Browsers close in {mins} minute{'s' if mins != 1 else ''}"
+            left = f"Apps close in {mins} minute{'s' if mins != 1 else ''}"
             body = f"Curfew at {status.bedtime}. Finish up and save your work."
             toast("Browser Curfew", f"{left}. {body}", sound=True)
             overlay.show_async(left, body, WARNING_BANNER_S)
 
         mono = pl_winsys.uptime_s()
         if status.blocked:
-            new = [pid for pid in browsers if not self.closer.is_closing(pid)]
-            # Curfew just started with browsers open: the full grace to save.
+            new = [pid for pid in apps if not self.closer.is_closing(pid)]
+            # Curfew just started with apps open: the full grace to save.
             # Launched during the curfew: nothing to save.
             ending_now = result.just_blocked
             grace = cfg["grace_minutes"] * 60
             grace = grace if ending_now else min(grace, BLOCKED_LAUNCH_GRACE_S)
             if new and (ending_now or time.monotonic() - self.last_blocked_notice >= BLOCKED_NOTICE_EVERY_S):
                 self.last_blocked_notice = time.monotonic()
-                again = f"Browsers are allowed again at {cfg['wake_time']}."
+                again = f"Apps are allowed again at {cfg['wake_time']}."
                 if ending_now:
                     why = "Curfew: save your work now"
-                    body = f"Browsers force-close in {grace // 60} min, so save anything you have open."
-                    banner = "Save anything you have open before browsers force-close.\nClosing in {clock}. " + again
+                    body = f"Apps force-close in {grace // 60} min, so save anything you have open."
+                    banner = "Save anything you have open before apps force-close.\nClosing in {clock}. " + again
                 else:
-                    why = "Browsers are blocked"
-                    body = f"Closing the browser in {grace} s."
+                    why = "Curfew is on"
+                    body = f"Closing the app in {grace} s."
                     banner = again
                 toast(f"Browser Curfew: {why}", f"{body} {again}", sound=True)
                 overlay.show_async(why, banner, max(grace, BLOCKED_BANNER_MIN_S))
             for pid in new:
-                self.closer.close(pid, browsers[pid], mono, grace)
+                self.closer.close(pid, apps[pid], mono, grace)
         self.closer.step(mono)
 
     def run(self) -> None:
@@ -213,13 +213,13 @@ class Daemon:
         r = self.engine.start(time.time(), pl_winsys.uptime_s(), datetime.now())
         log.info("Daemon started; status %s", r.status)
         self.check_config()
-        self.scanner.configure(self.state.active["browsers"])
+        self.scanner.configure(self.state.active["apps"], self.state.active["close_games"])
         self.save()
         while True:
             events = self.check_config() | self.check_requests()
-            browsers = self.scanner.scan()
-            result = self.engine.tick(time.time(), pl_winsys.uptime_s(), datetime.now(), browsing=bool(browsers))
-            self.handle_tick(result, browsers)
+            apps = self.scanner.scan()
+            result = self.engine.tick(time.time(), pl_winsys.uptime_s(), datetime.now(), in_use=bool(apps))
+            self.handle_tick(result, apps)
             if result.uninstall_due:
                 perform_uninstall()
                 return

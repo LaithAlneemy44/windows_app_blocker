@@ -126,11 +126,11 @@ class Clock:
         self.mono += seconds
 
 
-def run(engine, clock, seconds, browsing, step=2):
+def run(engine, clock, seconds, in_use, step=2):
     out = []
     for _ in range(int(seconds // step)):
         clock.advance(step)
-        out.append(engine.tick(clock.wall, clock.mono, clock.local, browsing))
+        out.append(engine.tick(clock.wall, clock.mono, clock.local, in_use))
     return out
 
 
@@ -139,7 +139,7 @@ def test_just_blocked_once_and_warning_before():
     clock = Clock(at(5, "22:00"))
     engine = Engine(state)
     engine.start(clock.wall, clock.mono, clock.local)
-    results = run(engine, clock, 40 * 60, browsing=True)
+    results = run(engine, clock, 40 * 60, in_use=True)
     assert sum(r.just_blocked for r in results) == 1
     assert [w for r in results for w in r.warnings] == [15, 5]
 
@@ -149,7 +149,7 @@ def test_no_warning_without_browser():
     clock = Clock(at(5, "22:00"))
     engine = Engine(state)
     engine.start(clock.wall, clock.mono, clock.local)
-    assert not any(r.warnings for r in run(engine, clock, 30 * 60, browsing=False))
+    assert not any(r.warnings for r in run(engine, clock, 30 * 60, in_use=False))
 
 
 def test_pending_default_change_waits_loosen_delay():
@@ -161,7 +161,7 @@ def test_pending_default_change_waits_loosen_delay():
     clock = Clock(at(5, "12:00"))
     engine = Engine(state)
     engine.start(clock.wall, clock.mono, clock.local)
-    run(engine, clock, 24 * HOUR, browsing=False, step=60)
+    run(engine, clock, 24 * HOUR, in_use=False, step=60)
     assert state.active["bedtime"] == "23:30"
 
 
@@ -169,12 +169,12 @@ def test_default_changes_tighten_and_loosen():
     state = make()
     desired = copy.deepcopy(state.active)
     desired.update(bedtime="21:30", grace_minutes=10)
-    desired["browsers"] = [b for b in desired["browsers"] if b != "chrome.exe"] + ["iexplore.exe"]
+    desired["apps"] = [b for b in desired["apps"] if b != "chrome.exe"] + ["iexplore.exe"]
     r = pl_rules.reconcile(state, desired, rules.looser_rules(state.active), rules.LIST_LOOSE_OP)
     assert state.active["bedtime"] == "21:30"  # earlier: immediate
-    assert "iexplore.exe" in state.active["browsers"]  # adding: immediate
-    assert {p["key"] for p in r.new_pending} == {"grace_minutes", "browsers"}
-    assert "chrome.exe" in state.active["browsers"]  # removing: waits
+    assert "iexplore.exe" in state.active["apps"]  # adding: immediate
+    assert {p["key"] for p in r.new_pending} == {"grace_minutes", "apps"}
+    assert "chrome.exe" in state.active["apps"]  # removing: waits
 
 
 def test_bedtime_after_midnight_is_looser():
@@ -187,7 +187,7 @@ def test_bedtime_after_midnight_is_looser():
 
 def test_config_roundtrip_and_defaults():
     cfg = parse_config(render_config(DEFAULTS))
-    assert cfg == {**DEFAULTS, "browsers": sorted(DEFAULTS["browsers"])}
+    assert cfg == {**DEFAULTS, "apps": sorted(DEFAULTS["apps"])}
     assert cfg["wake_time"] == "07:00"
     assert cfg["grace_minutes"] == 5
 
@@ -219,3 +219,68 @@ def test_only_main_browser_processes_are_targeted():
         30: ("chrome.exe", 99),  # helper whose parent is gone
     }
     assert main_processes(procs) == {10: "chrome.exe", 20: "firefox.exe", 30: "chrome.exe"}
+
+
+# ---------------------------------------------------------------- apps and games
+
+def test_defaults_include_chat_apps():
+    for exe in ("discord.exe", "ms-teams.exe", "teams.exe", "olk.exe", "outlook.exe", "chrome.exe"):
+        assert exe in DEFAULTS["apps"]
+    assert DEFAULTS["close_games"] is True
+
+
+def test_old_browsers_key_still_parses():
+    cfg = parse_config('browsers = ["chrome.exe"]')
+    assert cfg["apps"] == ["chrome.exe"]
+    with pytest.raises(ConfigError):
+        parse_config('browsers = ["a.exe"]\napps = ["b.exe"]')
+
+
+def test_old_state_is_migrated():
+    old = make().to_dict()
+    old["active"]["browsers"] = old["active"].pop("apps")
+    del old["active"]["close_games"]
+    old["pending"] = [{"key": "browsers", "op": "remove", "item": "x.exe", "remaining_s": 5.0}]
+    state = State.from_dict(old)
+    assert "browsers" not in state.active and state.active["apps"]
+    assert state.active["close_games"] is True
+    assert state.pending[0]["key"] == "apps"
+
+
+def test_close_games_off_is_looser_on_is_immediate():
+    state = make(close_games=True)
+    desired = copy.deepcopy(state.active)
+    desired["close_games"] = False
+    r = pl_rules.reconcile(state, desired, rules.looser_rules(state.active), rules.LIST_LOOSE_OP)
+    assert state.active["close_games"] is True and [p["key"] for p in r.new_pending] == ["close_games"]
+
+    state = make(close_games=False)
+    desired = copy.deepcopy(state.active)
+    desired["close_games"] = True
+    pl_rules.reconcile(state, desired, rules.looser_rules(state.active), rules.LIST_LOOSE_OP)
+    assert state.active["close_games"] is True and not state.pending
+
+
+def test_close_games_roundtrips_through_config_file():
+    cfg = copy.deepcopy(DEFAULTS)
+    cfg["close_games"] = False
+    assert parse_config(render_config(cfg))["close_games"] is False
+    with pytest.raises(ConfigError):
+        parse_config("close_games = 1")
+
+
+def test_scanner_targets_listed_apps_and_games(monkeypatch):
+    from curfew import detect
+
+    class FakeGames:
+        def is_game(self, exe):
+            return exe.lower().startswith("d:\steamlibrary\steamapps\common\\")
+
+    monkeypatch.setattr(detect, "GameScanner", FakeGames)
+    s = detect.AppScanner()
+    s.configure(["discord.exe", "ms-teams.exe"], close_games=True)
+    assert s.is_target(r"C:\Users\x\AppData\Local\Discord\app-1.0\Discord.exe")
+    assert s.is_target(r"D:\SteamLibrary\steamapps\common\Game\game.exe")
+    assert not s.is_target(r"C:\Windows\notepad.exe")
+    s.configure(["discord.exe"], close_games=False)
+    assert not s.is_target(r"D:\SteamLibrary\steamapps\common\Game\game.exe")

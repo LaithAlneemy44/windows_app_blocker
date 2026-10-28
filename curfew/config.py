@@ -24,6 +24,12 @@ def parse_config(text: str) -> dict:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"invalid TOML: {e}") from e
 
+    # "browsers" was renamed to "apps" when chat apps and games were added.
+    if "browsers" in raw:
+        if "apps" in raw:
+            raise ConfigError('use "apps" only ("browsers" is its old name)')
+        raw["apps"] = raw.pop("browsers")
+
     unknown = set(raw) - set(DEFAULTS)
     if unknown:
         raise ConfigError(f"unknown setting(s): {', '.join(sorted(unknown))}")
@@ -43,18 +49,21 @@ def parse_config(text: str) -> dict:
         raise ConfigError("warning_minutes must be a list of whole numbers")
     cfg["warning_minutes"] = sorted({_int("warning_minutes", w, 1) for w in warnings}, reverse=True)
 
-    cfg["browsers"] = sorted({normalize_entry(e) for e in _str_list("browsers", cfg["browsers"]) if e.strip()})
+    if not isinstance(cfg["close_games"], bool):
+        raise ConfigError(f"close_games must be true or false, got {cfg['close_games']!r}")
+    cfg["apps"] = sorted({normalize_entry(e) for e in _str_list("apps", cfg["apps"]) if e.strip()})
     return cfg
 
 
 _COMMENTS = {
-    "bedtime": "Browsers close at this time every night (24h clock).",
-    "wake_time": "Browsers are allowed again from this time each morning.",
+    "bedtime": "Apps close at this time every night (24h clock).",
+    "wake_time": "Apps are allowed again from this time each morning.",
     "change_deadline": "Tonight's curfew can only be made later (once per day) before this time.",
     "warning_minutes": "Warnings this many minutes before the curfew.",
-    "grace_minutes": "At the curfew, a banner counts down this long before browsers are force-closed.",
+    "grace_minutes": "At the curfew, a banner counts down this long before apps are force-closed.",
     "loosen_delay_hours": "How long looser settings (and uninstalling) take to apply.",
-    "browsers": "Programs to close: exe names (chrome.exe) or full paths.",
+    "close_games": "Also close games (Steam games, found the same way PlayLimiter finds them).",
+    "apps": "Programs to close: exe names (chrome.exe) or full paths.",
 }
 
 

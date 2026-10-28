@@ -26,10 +26,10 @@ def cmd_status(_args) -> int:
     cfg = state.active
     st = rules.evaluate(state, now)
     if st.blocked:
-        print(f"Curfew active:  browsers allowed again at {cfg['wake_time']} (in {fmt_duration((st.ends_at - now).total_seconds())})")
+        print(f"Curfew active:  apps allowed again at {cfg['wake_time']} (in {fmt_duration((st.ends_at - now).total_seconds())})")
     else:
         note = " (changed for today)" if st.changed else ""
-        print(f"Tonight:        browsers close at {st.bedtime}{note}, in {fmt_duration((st.starts_at - now).total_seconds())}")
+        print(f"Tonight:        apps close at {st.bedtime}{note}, in {fmt_duration((st.starts_at - now).total_seconds())}")
         reason = rules.later_refusal(state, now)
         print(f"                {reason or 'Can be made later once, until ' + cfg['change_deadline'] + '.'}")
 
@@ -110,7 +110,7 @@ def _send(req: dict) -> int:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="curfew", description="Close browsers at night.")
+    parser = argparse.ArgumentParser(prog="curfew", description="Close browsers, chat apps and games at night.")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status", help="show tonight's curfew, active settings and pending changes")
     sub.add_parser("install", help="register the logon task and start the app")

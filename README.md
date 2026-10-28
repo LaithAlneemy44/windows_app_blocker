@@ -98,7 +98,7 @@ Files, all in `%LOCALAPPDATA%\PlayLimiter`:
 
 ## Browser Curfew
 
-A second, separate app in the same install. It closes web browsers at night: from **22:30** until **07:00** by default. It has its own background task, its own settings window with its own desktop shortcut (**Browser Curfew**, a moon icon), and its own data folder. It doesn't share any settings or state with PlayLimiter.
+A second, separate app in the same install. Despite the name, it closes browsers, chat and work apps (Discord, Teams, Outlook) and games at night: from **22:30** until **07:00** by default. It has its own background task, its own settings window with its own desktop shortcut (**Browser Curfew**, a moon icon), and its own data folder. It doesn't share any settings or state with PlayLimiter.
 
 ```powershell
 curfew install
@@ -106,7 +106,12 @@ curfew install
 
 This works like `playlimiter install`: it creates `%LOCALAPPDATA%\BrowserCurfew\config.toml`, registers a **BrowserCurfew** logon task, starts the app and adds the **Browser Curfew** desktop shortcut. Use `py -m curfew install` if `curfew` isn't on your PATH.
 
-**At the curfew**, every open browser gets a banner across the top of the screen. It tells you to save anything you have open and counts down **5 minutes** (`grace_minutes`). After the countdown, browsers are force-closed. They're asked to close normally first, so Chrome and Edge can restore your tabs. A browser opened during the curfew is closed after 10 seconds. You get a warning 15 minutes before the curfew (`warning_minutes`), but only if a browser is open.
+**What it closes:**
+
+- **Everything in `apps`.** By default that's the common browsers, Discord, Teams (new and classic) and Outlook (new and classic). You can add any other program by exe name or path.
+- **Games, if `close_games` is on (the default).** These are found the same way PlayLimiter finds them: anything running from a Steam library.
+
+**At the curfew**, a banner appears across the top of the screen if any of these are open. It tells you to save anything you have open and counts down **5 minutes** (`grace_minutes`). After the countdown, the apps are force-closed. They're asked to close normally first, so Chrome and Edge can restore your tabs. Discord and Teams just hide to the tray when asked to close, so they're always force-closed at the end of the countdown. An app opened during the curfew is closed after 10 seconds. You get a warning 15 minutes before the curfew (`warning_minutes`), but only if one of these apps is open.
 
 **Changing just tonight** (the "Tonight only" box in the settings window, or `curfew tonight 23:30`):
 
@@ -116,16 +121,17 @@ This works like `playlimiter install`: it creates `%LOCALAPPDATA%\BrowserCurfew\
 
 A "day" runs from 07:00 to 07:00, so a change to 01:00 counts as tonight.
 
-**Changing the defaults** (the "Every night" part of the window, or `config.toml`) follows PlayLimiter's rules. Stricter changes apply right away: an earlier curfew, an earlier change deadline, a shorter save time, or adding a browser. Looser changes wait `loosen_delay_hours` (24 h), and any change to `wake_time` counts as looser.
+**Changing the defaults** (the "Every night" part of the window, or `config.toml`) follows PlayLimiter's rules. Stricter changes apply right away: an earlier curfew, an earlier change deadline, a shorter save time, adding an app, or turning `close_games` on. Looser changes wait `loosen_delay_hours` (24 h): for example removing an app or turning `close_games` off. Any change to `wake_time` counts as looser.
 
 ```toml
-bedtime = "22:30"          # browsers close at this time every night
+bedtime = "22:30"          # apps close at this time every night
 wake_time = "07:00"        # and are allowed again from this time
 change_deadline = "16:00"  # tonight can only be made later before this
 warning_minutes = [15]
 grace_minutes = 5          # banner countdown before force-closing
 loosen_delay_hours = 24
-browsers = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", ...]  # exe names or full paths
+close_games = true         # also close Steam games
+apps = ["chrome.exe", "msedge.exe", "discord.exe", "ms-teams.exe", "olk.exe", ...]  # exe names or full paths
 ```
 
 | Command | What it does |
@@ -138,7 +144,7 @@ browsers = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", ...]  # exe 
 
 Files are in `%LOCALAPPDATA%\BrowserCurfew`: `config.toml`, `state.json`, `curfew.log`.
 
-Limitations: the curfew follows the Windows clock, so changing the clock gets around it. Only programs in `browsers` are closed. Apps with a built-in browser (Edge WebView2, Electron apps) aren't affected. The same "friction, not security" caveats as PlayLimiter apply.
+Limitations: the curfew follows the Windows clock, so changing the clock gets around it. Only programs in `apps`, plus Steam games if `close_games` is on, are closed. Other apps with a built-in browser (Edge WebView2, Electron apps) aren't affected unless you add them. Older configs that still use the setting's previous name, `browsers`, keep working. The same "friction, not security" caveats as PlayLimiter apply.
 
 ## Anti-cheat note
 

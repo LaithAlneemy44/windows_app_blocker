@@ -25,15 +25,15 @@ REFRESH_MS = 2000
 
 # key, label, hint, type
 SCALAR_FIELDS = [
-    ("bedtime", "Curfew time", "Browsers close at this time every night (24h, e.g. 22:30)", str),
+    ("bedtime", "Curfew time", "Apps close at this time every night (24h, e.g. 22:30)", str),
     ("wake_time", "Allowed again at", "When the curfew lifts each morning", str),
     ("change_deadline", "Change deadline", "Tonight can only be made later before this", str),
     ("warning_minutes", "Warnings (minutes before)", "Comma-separated, e.g. 15, 5", "list"),
-    ("grace_minutes", "Time to save (minutes)", "Banner countdown before browsers are force-closed", int),
+    ("grace_minutes", "Time to save (minutes)", "Banner countdown before apps are force-closed", int),
     ("loosen_delay_hours", "Loosening delay (hours)", "How long looser settings wait", float),
 ]
 LIST_FIELDS = [
-    ("browsers", "Browsers to close", "Exe names (chrome.exe) or full paths, one per line"),
+    ("apps", "Apps to close", "Browsers, Discord, Teams, Outlook… Exe names (chrome.exe) or full paths, one per line"),
 ]
 
 
@@ -70,7 +70,7 @@ class SettingsWindow:
         # ---- tonight only
         tonight = ttk.LabelFrame(frame, text="Tonight only", padding=10)
         tonight.grid(row=1, column=0, columnspan=3, sticky="we", pady=(0, 12))
-        ttk.Label(tonight, text="Browsers close tonight at").grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(tonight, text="Apps close tonight at").grid(row=0, column=0, sticky="w", padx=(0, 10))
         self.tonight_var = tk.StringVar()
         self.tonight_box = ttk.Combobox(tonight, textvariable=self.tonight_var, width=8)
         self.tonight_box.grid(row=0, column=1, sticky="w")
@@ -107,6 +107,12 @@ class SettingsWindow:
             self.active_labels[key] = ttk.Label(defaults, foreground="#666", font=("Segoe UI", 8), wraplength=520)
             self.active_labels[key].grid(row=row + 2, column=1, columnspan=2, sticky="w", pady=(0, 6))
             row += 3
+
+        self.close_games_var = tk.BooleanVar()
+        ttk.Checkbutton(defaults, text="Also close games (Steam games, the same ones PlayLimiter tracks)",
+                        variable=self.close_games_var).grid(row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        self.active_labels["close_games"] = ttk.Label(defaults, foreground="#666", font=("Segoe UI", 8))
+        self.active_labels["close_games"].grid(row=row + 1, column=1, columnspan=2, sticky="w", pady=(0, 6))
 
         actions = ttk.Frame(frame)
         actions.grid(row=3, column=0, columnspan=3, sticky="e", pady=(10, 0))
@@ -181,6 +187,7 @@ class SettingsWindow:
         for key, *_ in LIST_FIELDS:
             self.texts[key].delete("1.0", "end")
             self.texts[key].insert("1.0", "\n".join(cfg[key]))
+        self.close_games_var.set(cfg["close_games"])
 
     def read_form(self) -> dict:
         cfg = {}
@@ -200,13 +207,14 @@ class SettingsWindow:
                 raise ConfigError(f"{label}: {raw!r} is not a valid number") from None
         for key, *_ in LIST_FIELDS:
             cfg[key] = [line.strip() for line in self.texts[key].get("1.0", "end").splitlines() if line.strip()]
+        cfg["close_games"] = self.close_games_var.get()
         return cfg
 
     def add_exe(self) -> None:
-        path = filedialog.askopenfilename(title="Choose a browser to close", filetypes=[("Programs", "*.exe")])
+        path = filedialog.askopenfilename(title="Choose an app to close", filetypes=[("Programs", "*.exe")])
         if path:
-            has_text = bool(self.texts["browsers"].get("1.0", "end").strip())
-            self.texts["browsers"].insert("end", ("\n" if has_text else "") + path.replace("/", "\\"))
+            has_text = bool(self.texts["apps"].get("1.0", "end").strip())
+            self.texts["apps"].insert("end", ("\n" if has_text else "") + path.replace("/", "\\"))
 
     def save(self) -> None:
         try:
@@ -260,10 +268,10 @@ class SettingsWindow:
             cfg = state.active
             st = rules.evaluate(state, now)
             if st.blocked:
-                line = f"Curfew active: browsers allowed again at {cfg['wake_time']} (in {fmt_duration((st.ends_at - now).total_seconds())})"
+                line = f"Curfew active: apps allowed again at {cfg['wake_time']} (in {fmt_duration((st.ends_at - now).total_seconds())})"
             else:
                 note = f" (changed for today; normally {cfg['bedtime']})" if st.changed else ""
-                line = f"Tonight: browsers close at {st.bedtime}{note}, in {fmt_duration((st.starts_at - now).total_seconds())}"
+                line = f"Tonight: apps close at {st.bedtime}{note}, in {fmt_duration((st.starts_at - now).total_seconds())}"
             if state.uninstall_remaining_s is not None:
                 line += f"\nUninstall scheduled for {_when(state.uninstall_remaining_s)}"
             if not running:

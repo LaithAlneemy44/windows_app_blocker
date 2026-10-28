@@ -39,6 +39,8 @@ def _clock(seconds: float) -> str:
 
 
 def _fmt(value) -> str:
+    if isinstance(value, bool):
+        return "on" if value else "off"
     if isinstance(value, list):
         return ", ".join(str(v) for v in value) or "(none)"
     if isinstance(value, float) and value.is_integer():

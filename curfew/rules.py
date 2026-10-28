@@ -5,7 +5,7 @@ Nothing in here touches Windows, files or the real clock, so tests can drive it 
 The curfew day
 --------------
 A "day" runs from one ``wake_time`` to the next (07:00 to 07:00 by default), so 01:00
-belongs to the evening before it. Browsers are blocked from that day's bedtime until the
+belongs to the evening before it. The apps are blocked from that day's bedtime until the
 next wake_time. Times are compared by how far they are past wake_time, so "00:30" is later
 than "22:30".
 
@@ -34,7 +34,10 @@ DEFAULTS: dict = {
     "warning_minutes": [15],
     "grace_minutes": 5,
     "loosen_delay_hours": 24,
-    "browsers": [
+    # Also close games (the same Steam-library detection PlayLimiter uses).
+    "close_games": True,
+    "apps": [
+        # Browsers
         "arc.exe",
         "brave.exe",
         "chrome.exe",
@@ -46,6 +49,12 @@ DEFAULTS: dict = {
         "vivaldi.exe",
         "waterfox.exe",
         "zen.exe",
+        # Chat and work
+        "discord.exe",
+        "ms-teams.exe",  # new Teams
+        "teams.exe",  # classic Teams
+        "olk.exe",  # new Outlook
+        "outlook.exe",  # classic Outlook
     ],
 }
 
@@ -65,7 +74,7 @@ def since_wake(hhmm: str, wake_time: str) -> int:
 
 
 def looser_rules(active: dict) -> dict:
-    """For each scalar setting: is going from old to new LOOSER (more browsing)?"""
+    """For each scalar setting: is going from old to new LOOSER (more time on the apps)?"""
     wake = active["wake_time"]
     return {
         "bedtime": lambda old, new: since_wake(new, wake) > since_wake(old, wake),
@@ -74,13 +83,14 @@ def looser_rules(active: dict) -> dict:
         "change_deadline": lambda old, new: since_wake(new, wake) > since_wake(old, wake),
         "grace_minutes": lambda old, new: new > old,
         "loosen_delay_hours": lambda old, new: new < old,
-        # Warnings don't change when browsers close.
+        # Warnings don't change when apps close.
         "warning_minutes": lambda old, new: False,
+        "close_games": lambda old, new: old and not new,
     }
 
 
-# Removing a browser = fewer things closed = looser.
-LIST_LOOSE_OP = {"browsers": "remove"}
+# Removing an app = fewer things closed = looser.
+LIST_LOOSE_OP = {"apps": "remove"}
 
 
 @dataclass
@@ -102,6 +112,12 @@ class State:
     def from_dict(cls, data: dict) -> "State":
         known = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         state = cls(**known)
+        # "browsers" was renamed to "apps" when chat apps and games were added.
+        if "browsers" in state.active:
+            state.active["apps"] = state.active.pop("browsers")
+        for p in state.pending:
+            if p.get("key") == "browsers":
+                p["key"] = "apps"
         for k, v in DEFAULTS.items():
             state.active.setdefault(k, copy.deepcopy(v))
         return state
@@ -159,7 +175,7 @@ def later_refusal(state: State, now_local: datetime) -> str | None:
     """Why tonight can't be made later right now, or None if it can."""
     st = evaluate(state, now_local)
     if st.blocked:
-        return f"The curfew has already started. Browsers are allowed again at {state.active['wake_time']}."
+        return f"The curfew has already started. Apps are allowed again at {state.active['wake_time']}."
     if st.change_used:
         return "You've already used today's change. Tonight can still be made earlier."
     if now_local >= st.deadline:
@@ -192,7 +208,7 @@ def set_tonight(state: State, now_local: datetime, time: str) -> str:
 
 # ---------------------------------------------------------------- ticking
 
-def advance(state: State, elapsed: float, browsing: bool, now_local: datetime) -> TickResult:
+def advance(state: State, elapsed: float, in_use: bool, now_local: datetime) -> TickResult:
     """Move the state forward by ``elapsed`` trusted seconds (only pending timers use it)."""
     applied, uninstall_due = _count_down_timers(state, max(0.0, elapsed))
     st = evaluate(state, now_local)
@@ -204,7 +220,7 @@ def advance(state: State, elapsed: float, browsing: bool, now_local: datetime) -
     left_s = (st.starts_at - now_local).total_seconds()
     state.warned = [w for w in state.warned if left_s <= w * 60]
     warnings = []
-    if browsing and not st.blocked:
+    if in_use and not st.blocked:
         crossed = [w for w in state.active["warning_minutes"] if left_s <= w * 60 and w not in state.warned]
         if crossed:
             warnings = [min(crossed)]
@@ -222,13 +238,13 @@ class Engine:
     def start(self, wall: float, mono: float, now_local: datetime) -> TickResult:
         credit = downtime_credit(self.state, wall, mono)
         self._stamp(wall, mono)
-        return advance(self.state, credit, browsing=False, now_local=now_local)
+        return advance(self.state, credit, in_use=False, now_local=now_local)
 
-    def tick(self, wall: float, mono: float, now_local: datetime, browsing: bool) -> TickResult:
+    def tick(self, wall: float, mono: float, now_local: datetime, in_use: bool) -> TickResult:
         last = self.state.last_mono
         elapsed = 0.0 if last is None else max(0.0, mono - last)
         self._stamp(wall, mono)
-        return advance(self.state, elapsed, browsing, now_local)
+        return advance(self.state, elapsed, in_use, now_local)
 
     def _stamp(self, wall: float, mono: float) -> None:
         self.state.last_wall = wall

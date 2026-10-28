@@ -82,6 +82,8 @@ def parse_config(text: str) -> dict:
 
 
 def _toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
     if isinstance(value, str):
         return json.dumps(value)  # JSON string escapes are valid TOML basic strings
     if isinstance(value, list):
