@@ -5,6 +5,13 @@ import logging
 
 log = logging.getLogger(__name__)
 _toaster = None
+_app_name = "PlayLimiter"
+
+
+def set_app_name(name: str) -> None:
+    """Name shown as the toasts' sender (Browser Curfew uses its own)."""
+    global _app_name, _toaster
+    _app_name, _toaster = name, None
 
 
 def toast(title: str, message: str, sound: bool = False) -> None:
@@ -23,7 +30,7 @@ def toast(title: str, message: str, sound: bool = False) -> None:
         from windows_toasts import Toast, WindowsToaster
 
         if _toaster is None:
-            _toaster = WindowsToaster("PlayLimiter")
+            _toaster = WindowsToaster(_app_name)
         _toaster.show_toast(Toast([title, message]))
     except Exception as e:
         log.warning("Toast failed: %s", e)

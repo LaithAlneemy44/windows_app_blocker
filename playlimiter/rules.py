@@ -300,18 +300,19 @@ class ReconcileResult:
     new_pending: list = field(default_factory=list)  # pending entries created or restarted
 
 
-def reconcile(state: State, desired: dict) -> ReconcileResult:
+def reconcile(state: State, desired: dict, looser: dict = LOOSER, list_loose_op: dict = LIST_LOOSE_OP) -> ReconcileResult:
     """Compare the edited config with the active one.
 
     Stricter changes apply immediately. Looser changes become pending for
     ``loosen_delay_hours`` (the *active* value, so lowering the delay can't
     speed itself up). Pending changes that are no longer wanted are dropped.
+    ``looser``/``list_loose_op`` let another app (Browser Curfew) reuse this with its own settings.
     """
     active = state.active
     delay_s = active["loosen_delay_hours"] * 3600
     result = ReconcileResult()
 
-    for key, is_looser in LOOSER.items():
+    for key, is_looser in looser.items():
         old, new = active[key], desired[key]
         existing = next((p for p in state.pending if p["key"] == key and "op" not in p), None)
         if existing:
@@ -330,7 +331,7 @@ def reconcile(state: State, desired: dict) -> ReconcileResult:
             result.new_pending.append(entry)
         state.pending.append(entry)
 
-    for key, loose_op in LIST_LOOSE_OP.items():
+    for key, loose_op in list_loose_op.items():
         old, new = set(active[key]), set(desired[key])
         added, removed = new - old, old - new
         strict_items = removed if loose_op == "add" else added

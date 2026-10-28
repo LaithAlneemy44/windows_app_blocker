@@ -1,0 +1,38 @@
+# Browser Curfew configuration.
+# The running copy lives at %LOCALAPPDATA%\BrowserCurfew\config.toml.
+# Stricter changes apply right away. Looser ones wait loosen_delay_hours.
+# To change just tonight's time, use the settings window instead (curfew settings).
+
+# Browsers close at this time every night (24h clock).
+bedtime = "22:30"
+
+# Browsers are allowed again from this time each morning.
+wake_time = "07:00"
+
+# Tonight's curfew can only be made later (once per day) before this time.
+# Making it earlier works any time.
+change_deadline = "16:00"
+
+# Warnings this many minutes before the curfew.
+warning_minutes = [15]
+
+# At the curfew, a banner counts down this long before browsers are force-closed.
+grace_minutes = 5
+
+# How long looser settings (and uninstalling) take to apply.
+loosen_delay_hours = 24
+
+# Programs to close. Bare names match the exe file name, and paths match that file or folder.
+browsers = [
+    "arc.exe",
+    "brave.exe",
+    "chrome.exe",
+    "chromium.exe",
+    "firefox.exe",
+    "librewolf.exe",
+    "msedge.exe",
+    "opera.exe",
+    "vivaldi.exe",
+    "waterfox.exe",
+    "zen.exe",
+]
