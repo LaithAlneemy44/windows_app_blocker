@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -173,8 +174,11 @@ class Daemon:
         self.scanner.configure(cfg["browsers"])
         status = result.status
 
-        for w in result.warnings:
-            left = f"Browsers close in {w} minute{'s' if w != 1 else ''}"
+        if result.warnings:
+            # The real time left, not the threshold crossed: tonight may have just been moved
+            # to a few minutes away, which crosses the 15-minute threshold with far less left.
+            mins = max(1, math.ceil((status.starts_at - datetime.now()).total_seconds() / 60))
+            left = f"Browsers close in {mins} minute{'s' if mins != 1 else ''}"
             body = f"Curfew at {status.bedtime}. Finish up and save your work."
             toast("Browser Curfew", f"{left}. {body}", sound=True)
             overlay.show_async(left, body, WARNING_BANNER_S)

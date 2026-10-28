@@ -7,16 +7,23 @@ Context for Claude Code working in this repo.
 Two Windows 10/11 self-control apps in one pip install (`py -m pip install .`):
 
 - **PlayLimiter** (`playlimiter/`): limits playtime for Steam/other games. It has been in use for a while.
-- **Browser Curfew** (`curfew/`): new, and **not yet tested on Windows**. It closes browsers every night from 22:30 until 07:00. It has a separate logon task (`BrowserCurfew`), data folder (`%LOCALAPPDATA%\BrowserCurfew`), settings window and desktop shortcut ("Browser Curfew", moon icon). It shares no settings or state with PlayLimiter.
+  Session model: launching a game starts a session whose clock keeps running even if the game is closed; when it ends the break (`cooldown_minutes`) starts; nothing counts until the next launch. The daily cap counts only time a game is open. A **free-change window** opens at `daily_reset_time` (pending changes apply, and all setting changes apply instantly) and closes at the first game of the day.
+- **Browser Curfew** (`curfew/`): installed and running on the Windows PC since 2026-10-28. It closes browsers every night from 22:30 until 07:00. It has a separate logon task (`BrowserCurfew`), data folder (`%LOCALAPPDATA%\BrowserCurfew`), settings window and desktop shortcut ("Browser Curfew", moon icon). It shares no settings or state with PlayLimiter.
 
 The user usually edits on a MacBook and runs the apps on their Windows PC, syncing through GitHub. The README has the user-facing details for both apps.
 
 ## Current branch state (as of 2026-10-28)
 
-- Browser Curfew is on the **`browser-curfew`** branch (commit `dd17a7f`), waiting to be tested on Windows.
-- `main` briefly had that commit. It was undone with a **revert commit (`42748b8`)**, so `main`'s files match the previous commit, `53fc9b8`.
-- Because `dd17a7f` is already in `main`'s history, **merging `browser-curfew` into `main` does nothing**. Once the user confirms it works, put it on `main` by reverting the revert: `git checkout main && git pull && git revert 42748b8 && git push`. Then also merge any later fixes from `browser-curfew`, such as this file.
+- Browser Curfew is on **`main`**. It was tested on Windows, then landed by reverting the revert `42748b8` (reapply commit on top of the PlayLimiter changes below), plus this file.
+- The **`browser-curfew`** branch is now stale (everything on it is in `main`). It hasn't been deleted; ask before deleting it.
 - Ask before force-pushing or deleting branches.
+
+## Shared-code compatibility
+
+Curfew reuses `playlimiter.rules.reconcile()` with its own `State`. PlayLimiter's version must keep working for it:
+- `ReconcileResult.tightened` is kept as an alias of `immediate` (the new name, since free-change-window changes can be looser).
+- `reconcile()` reads `free_change_window` with `getattr(..., False)`; Curfew's `State` has no such field.
+- `tests/test_rules.py::test_reconcile_accepts_a_state_without_free_change_window` guards this.
 
 ## Browser Curfew rules (what the user asked for)
 
@@ -39,16 +46,19 @@ The user usually edits on a MacBook and runs the apps on their Windows PC, synci
 
 ## Testing
 
-- On Windows: `py -m pip install -e ".[dev]"` then `py -m pytest` (77 tests).
+- On Windows: `py -m pip install -e ".[dev]"` then `py -m pytest` (87 tests).
 - On the Mac, Windows-only modules don't import. Tests there use a throwaway venv plus a pytest plugin that stubs `winreg`/`win32*`/`winsound` (`-p winstubs`). Don't commit stubs.
+- **Live tests on the user's PC must never touch their real games or browsers** (one test once closed a real game). Run a sandbox copy with its own `LOCALAPPDATA` (each data folder gets its own single-instance mutex, so it runs alongside the real apps), set `PLAYLIMITER_IGNORE_STEAM=1` so PlayLimiter skips Steam libraries, and give Curfew `browsers = ["<scratch folder>"]` with a renamed copy of `PING.EXE` as the stand-in. Set `PYTHONPATH` to the repo so the banner subprocess uses the repo code.
 
-## Still to verify on Windows (never run there yet)
+## Windows verification (done 2026-10-28, sandboxed)
 
-1. `curfew install` registers the task, starts the daemon and creates the desktop shortcut with the moon icon. `curfew status` and the settings window open.
-2. To test the curfew quickly: set tonight a few minutes earlier than now in the settings window (earlier is always allowed). The banner should count down 5:00 over the browser, then Chrome/Edge should close and offer to restore tabs. Reopening during the curfew should close within ~10 s.
-3. The warning toast and banner appear 15 min before (set `warning_minutes` or tonight's time to test).
-4. Later-change rules: refused after 16:00 or on a second attempt the same day.
-5. PlayLimiter still works as before (shortcut, banner, cooldown).
+1. Settings window opens and renders; banner `{clock}` countdown works. ✅ (Real `curfew install` also done: task, daemon and "Browser Curfew" shortcut all fine.)
+2. Curfew closes the stand-in browser after the grace; a relaunch during the curfew closes in ~11 s. ✅
+3. Warning fires before the curfew. ✅ It used to say "15 minutes" even when the curfew had just been moved to 2 minutes away; it now shows the real time left (same fix applied to PlayLimiter's warning).
+4. Later change: first allowed, second refused; earlier still allowed. ✅
+5. PlayLimiter unaffected (all tests pass, shared banner/notify/winsys fine). ✅
+
+Not yet seen with a real Chrome/Edge window (tab-restore prompt, banner over the tab strip).
 
 Known caveats:
 - The banner covers the top of the browser (tabs and address bar) for 5 min. It's click-through, but the user may want it moved or made smaller.

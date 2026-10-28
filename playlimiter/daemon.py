@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -167,8 +168,10 @@ class Daemon:
         cfg = self.state.active
         self.scanner.configure(cfg["exclude"], cfg["extra_paths"])
 
-        for w in result.warnings:
-            left = f"{w} minute{'s' if w != 1 else ''} of play left"
+        if result.warnings:
+            # The real time left, not the threshold crossed (relaunching with 5 min left crosses "10").
+            mins = max(1, math.ceil(result.status.remaining_s / 60))
+            left = f"{mins} minute{'s' if mins != 1 else ''} of play left"
             toast("PlayLimiter", f"{left}. Save your game now.", sound=True)
             overlay.show_async(left, "Save your game now.", WARNING_BANNER_S)
 
