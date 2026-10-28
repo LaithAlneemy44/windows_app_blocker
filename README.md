@@ -96,50 +96,6 @@ Files, all in `%LOCALAPPDATA%\PlayLimiter`:
 - `state.json`: active settings, budget, cooldown, pending changes. Written atomically.
 - `playlimiter.log`
 
-## Browser Curfew
-
-A second, separate app in the same install. It closes web browsers at night: from **22:30** until **07:00** by default. It has its own background task, its own settings window with its own desktop shortcut (**Browser Curfew**, a moon icon), and its own data folder. It doesn't share any settings or state with PlayLimiter.
-
-```powershell
-curfew install
-```
-
-This works like `playlimiter install`: it creates `%LOCALAPPDATA%\BrowserCurfew\config.toml`, registers a **BrowserCurfew** logon task, starts the app and adds the **Browser Curfew** desktop shortcut. Use `py -m curfew install` if `curfew` isn't on your PATH.
-
-**At the curfew**, every open browser gets a banner across the top of the screen. It tells you to save anything you have open and counts down **5 minutes** (`grace_minutes`). After the countdown, browsers are force-closed. They're asked to close normally first, so Chrome and Edge can restore your tabs. A browser opened during the curfew is closed after 10 seconds. You get a warning 15 minutes before the curfew (`warning_minutes`), but only if a browser is open.
-
-**Changing just tonight** (the "Tonight only" box in the settings window, or `curfew tonight 23:30`):
-
-- **Later**: once per day, and only before **16:00** (`change_deadline`). Plan it ahead, e.g. for an assignment due that night. You can't make it later once the curfew has started.
-- **Earlier**: allowed any time, and it doesn't use up the day's change.
-- Either way it only covers that night. The next day is back to the default.
-
-A "day" runs from 07:00 to 07:00, so a change to 01:00 counts as tonight.
-
-**Changing the defaults** (the "Every night" part of the window, or `config.toml`) follows PlayLimiter's rules. Stricter changes apply right away: an earlier curfew, an earlier change deadline, a shorter save time, or adding a browser. Looser changes wait `loosen_delay_hours` (24 h), and any change to `wake_time` counts as looser.
-
-```toml
-bedtime = "22:30"          # browsers close at this time every night
-wake_time = "07:00"        # and are allowed again from this time
-change_deadline = "16:00"  # tonight can only be made later before this
-warning_minutes = [15]
-grace_minutes = 5          # banner countdown before force-closing
-loosen_delay_hours = 24
-browsers = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", ...]  # exe names or full paths
-```
-
-| Command | What it does |
-|---|---|
-| `curfew status` | Tonight's curfew time, whether today's change is used, active settings, pending changes |
-| `curfew settings` | Open the settings window |
-| `curfew tonight HH:MM` | Change tonight's curfew time (rules above) |
-| `curfew install` / `curfew shortcut` | Same as the PlayLimiter versions |
-| `curfew uninstall` / `curfew cancel-uninstall` | Schedule or cancel removal after `loosen_delay_hours` |
-
-Files are in `%LOCALAPPDATA%\BrowserCurfew`: `config.toml`, `state.json`, `curfew.log`.
-
-Limitations: the curfew follows the Windows clock, so changing the clock gets around it. Only programs in `browsers` are closed. Apps with a built-in browser (Edge WebView2, Electron apps) aren't affected. The same "friction, not security" caveats as PlayLimiter apply.
-
 ## Anti-cheat note
 
 PlayLimiter only reads the process list, reads Steam's `libraryfolders.vdf`, and sends standard window close messages (`WM_CLOSE`). If a game ignores those, it terminates the process with the normal Windows API. It does not inject into, read the memory of, or modify any game. Still, if you play games with kernel-level anti-cheat, test with care.
@@ -160,8 +116,6 @@ py -m pytest
 ```
 
 The rules (sessions, cooldowns, daily cap, delayed loosening, uninstall timer) are in `playlimiter/rules.py`, with no Windows or file I/O dependencies. Tests drive them with a fake clock. Windows-specific code is in `detect.py`, `enforce.py`, `notify.py`, `steam.py` and `winsys.py`. The settings window is `gui.py` (tkinter).
-
-Browser Curfew lives in `curfew/`. Its rules are in `curfew/rules.py`, also pure and tested with fixed times (`tests/test_curfew.py`). It reuses PlayLimiter's closing, banner, toast and Task Scheduler code.
 
 ## Support
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "playlimiter"
 version = "0.1.0"
-description = "Windows background apps that limit how long you play games and close browsers at night."
+description = "Windows background app that limits how long you play games."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -20,14 +20,12 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 playlimiter = "playlimiter.cli:main"
-curfew = "curfew.cli:main"
 
 [tool.setuptools]
-packages = ["playlimiter", "curfew"]
+packages = ["playlimiter"]
 
 [tool.setuptools.package-data]
 playlimiter = ["config.example.toml", "icon.ico"]
-curfew = ["config.example.toml", "icon.ico"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

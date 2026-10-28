@@ -32,8 +32,7 @@ _EX_STYLE = (
 
 
 def show_async(title: str, message: str, seconds: int) -> None:
-    """Start the banner in a separate hidden process. ``{left}`` (seconds) or ``{clock}`` (m:ss)
-    in message counts down."""
+    """Start the banner in a separate hidden process. ``{left}`` in message counts down."""
     try:
         subprocess.Popen(
             [winsys.pythonw(), "-m", "playlimiter", "overlay", "--seconds", str(seconds), title, message],
@@ -42,10 +41,6 @@ def show_async(title: str, message: str, seconds: int) -> None:
         )
     except OSError:
         pass
-
-
-def _fill(message: str, left_s: int) -> str:
-    return message.replace("{left}", str(left_s)).replace("{clock}", f"{left_s // 60}:{left_s % 60:02d}")
 
 
 def _font(points: int, dpi: int, bold: bool):
@@ -80,7 +75,7 @@ def show(title: str, message: str, seconds: int) -> None:
     text_w = width - bar - 2 * pad
 
     deadline = time.monotonic() + seconds
-    state = {"text": _fill(message, seconds)}
+    state = {"text": message.replace("{left}", str(seconds))}
 
     def measure(font, text):
         hdc = win32gui.GetDC(0)
@@ -119,7 +114,7 @@ def show(title: str, message: str, seconds: int) -> None:
             if left_s <= 0:
                 win32gui.DestroyWindow(hwnd)
                 return 0
-            state["text"] = _fill(message, left_s)
+            state["text"] = message.replace("{left}", str(left_s))
             win32gui.InvalidateRect(hwnd, None, True)
             # Games sometimes put themselves on top; keep re-asserting without activating.
             win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
