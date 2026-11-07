@@ -101,6 +101,9 @@ class Daemon:
         self.config_mtime: float | None = None
         self.last_save = 0.0
         self.last_blocked_notice = -BLOCKED_NOTICE_EVERY_S
+        # Apps already open when the daemon starts (after a reboot, a crash or a hang) may hold
+        # unsaved work, so the first scan gets the full grace even mid-curfew.
+        self.first_scan = True
 
     # ------------------------------------------------------------ config
 
@@ -186,9 +189,9 @@ class Daemon:
         mono = pl_winsys.uptime_s()
         if status.blocked:
             new = [pid for pid in apps if not self.closer.is_closing(pid)]
-            # Curfew just started with apps open: the full grace to save.
-            # Launched during the curfew: nothing to save.
-            ending_now = result.just_blocked
+            # Curfew just started, or the daemon just started, with apps open: the full grace
+            # to save. Launched during the curfew: nothing to save.
+            ending_now = result.just_blocked or self.first_scan
             grace = cfg["grace_minutes"] * 60
             grace = grace if ending_now else min(grace, BLOCKED_LAUNCH_GRACE_S)
             if new and (ending_now or time.monotonic() - self.last_blocked_notice >= BLOCKED_NOTICE_EVERY_S):
@@ -206,6 +209,7 @@ class Daemon:
                 overlay.show_async(why, banner, max(grace, BLOCKED_BANNER_MIN_S))
             for pid in new:
                 self.closer.close(pid, apps[pid], mono, grace)
+        self.first_scan = False
         self.closer.step(mono)
 
     def run(self) -> None:
